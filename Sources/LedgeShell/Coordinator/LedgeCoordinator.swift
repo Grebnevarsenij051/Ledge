@@ -1580,6 +1580,10 @@ public final class LedgeCoordinator {
             // the hover latch — the Levels card's quiet window is about
             // hardware answering back, and nothing here touches the hardware.
             setDragging: { [weak self] dragging in self?.setHUDDragging(dragging) },
+            dismissFinished: { [weak self] in
+                self?.timerProviderRef?.dismissFinished()
+                self?.selectTimerLauncherIfWatching()
+            },
             stopwatchToggle: { [weak self] in
                 self?.ensureTimerRunning()
                 self?.timerProviderRef?.stopwatchToggle()

@@ -19,15 +19,17 @@ public struct TimerCardView: View {
         onContentHeight: @escaping (CGFloat) -> Void = { _ in },
         actions: TimerActions = TimerActions(),
         isCompactWidth: Bool = false,
-        // The gallery renders the dial face, which is otherwise only reachable
-        // by clicking — a state nobody can review is a state that drifts.
-        startsDialling: Bool = false
+        // The gallery renders the faces that are otherwise only reachable by
+        // clicking — a state nobody can review is a state that drifts.
+        startsDialling: Bool = false,
+        startsOnFace: Face? = nil
     ) {
         self.payload = payload
         self.onContentHeight = onContentHeight
         self.actions = actions
         self.isCompactWidth = isCompactWidth
         _isDialling = State(initialValue: startsDialling)
+        _face = State(initialValue: startsOnFace)
     }
 
     /// Which face is showing. Seeded from the payload's own mode — a card
@@ -42,10 +44,13 @@ public struct TimerCardView: View {
     /// survives closing the dial, so a user who dials 40 minutes, thinks
     /// better of it and comes back finds 40 rather than the default again.
     @State private var isDialling = false
-    @State private var dialledMinutes = 25
+    @State private var dialledMinutes: Int?
 
-    enum Face: Equatable {
+    /// Which face the card is wearing. Public because the gallery names one
+    /// directly: a face reachable only by clicking is a face nobody reviews.
+    public enum Face: Equatable {
         case timer
+        case focus
         case stopwatch
     }
 
@@ -75,7 +80,15 @@ public struct TimerCardView: View {
                 ))
                 switch shownFace {
                 case .timer:
-                    if payload.hasCountdown { full } else { idle }
+                    if payload.isFinished {
+                        finished
+                    } else if payload.hasCountdown {
+                        full
+                    } else {
+                        idle
+                    }
+                case .focus:
+                    if payload.hasCountdown && !payload.isCustom { full } else { focusReady }
                 case .stopwatch:
                     stopwatch
                 }
@@ -117,58 +130,112 @@ public struct TimerCardView: View {
     /// top, then a full-width row of duration chips — the pomodoro pair in
     /// their accents, one-off countdowns beside them. Recently used lengths
     /// take the neutral chips first, the way iOS's Timer offers Recents.
+    /// The ready card: how long, and one button that starts it.
+    ///
+    /// It used to be a row of six chips — Focus, Break, three remembered
+    /// lengths and a dial — where every chip both chose a length *and* started
+    /// it. Six ways to begin, no way to see what you were about to begin, and
+    /// no way to change your mind between the two. The length is now a thing
+    /// on the card that can be looked at and adjusted, and starting it is one
+    /// button that says Start.
+    ///
+    /// Focus and Break are not lengths, they are a different way of working,
+    /// and they moved to their own segment.
     private var idle: some View {
         VStack(alignment: .leading, spacing: isCompactWidth ? 8 : 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "timer")
-                    .font(.system(size: isCompactWidth ? 12 : 15, weight: .semibold))
-                    .foregroundStyle(.orange)
-                    .frame(
-                        width: isCompactWidth ? 26 : 36,
-                        height: isCompactWidth ? 26 : 36
-                    )
-                    .background(Circle().fill(.orange.opacity(0.22)))
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Timer")
-                        .font(.system(size: isCompactWidth ? 12 : 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text(payload.recents.isEmpty ? "Pomodoro & quick timers" : "Recents & quick timers")
-                        .font(.system(size: isCompactWidth ? 9 : 11, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.55))
-                }
-                Spacer(minLength: 0)
-            }
-
             if isDialling {
                 dial
             } else {
+                HStack(alignment: .center, spacing: 12) {
+                    // The length, and the way to change it: one target, so
+                    // there is nothing to find. The dial is the adjustment,
+                    // not the only way in.
+                    Button { isDialling = true } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Text("\(readyMinutes)")
+                                .font(.system(size: isCompactWidth ? 22 : 34, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .monospacedDigit()
+                            Text("min")
+                                .font(.system(size: isCompactWidth ? 10 : 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.45))
+                            Image(systemName: "dial.medium")
+                                .font(.system(size: isCompactWidth ? 9 : 11, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.35))
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Timer length")
+                    .accessibilityValue(DurationDial.spoken(readyMinutes))
+                    .accessibilityHint("Opens the dial")
+
+                    Spacer(minLength: 6)
+
+                    capsuleButton("Start", tint: .orange, height: isCompactWidth ? 30 : 34) {
+                        actions.startCustom(readyMinutes)
+                    }
+                    .frame(maxWidth: isCompactWidth ? 92 : 120)
+                }
+
+                // Three lengths, not six ways to start. Tapping one sets the
+                // length *and* starts it — the shortcut people actually want
+                // from a preset — while the number above is for anything else.
                 HStack(spacing: 7) {
-                    presetChip("Focus", subtitle: "\(Int(payload.total / 60))m", tint: .orange) {
-                        actions.startFocus()
-                    }
-                    presetChip("Break", subtitle: nil, tint: .green) {
-                        actions.startBreak()
-                    }
-                    ForEach(quickMinutes, id: \.self) { minutes in
+                    ForEach(TimerReadout.presets(recents: payload.recents, slots: isCompactWidth ? 2 : 3), id: \.self) { minutes in
                         presetChip(Self.minutesLabel(minutes), subtitle: nil, tint: nil) {
+                            dialledMinutes = minutes
                             actions.startCustom(minutes)
                         }
-                    }
-                    // Not a length: the way to any length. A dial glyph rather
-                    // than a number, so it does not read as one more preset.
-                    if !isCompactWidth {
-                        presetChip(nil, symbol: "dial.medium", subtitle: nil, tint: nil) {
-                            isDialling = true
-                        }
-                        .accessibilityLabel("Choose a length")
                     }
                 }
             }
         }
         .padding(.horizontal, isCompactWidth ? 12 : 0)
         .padding(.vertical, isCompactWidth ? 9 : 0)
+    }
+
+    /// What Start would use: whatever the dial was left on, or — before it has
+    /// been touched — the length this user actually reaches for, so the card
+    /// opens on something of theirs rather than on a number the app picked.
+    private var readyMinutes: Int {
+        dialledMinutes ?? TimerReadout.openingLength(
+            recents: payload.recents,
+            focusMinutes: Int(payload.total / 60)
+        )
+    }
+
+    /// Focus sessions: the pomodoro pair, kept whole rather than scattered
+    /// among quick timers. The cycle's own progress belongs here too.
+    private var focusReady: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "brain.head.profile")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.orange)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(.orange.opacity(0.22)))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Focus session")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("\(Int(payload.total / 60)) minutes, then a break")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+                Spacer(minLength: 0)
+                if payload.completedSessions > 0 {
+                    CycleDots(completed: payload.completedSessions, tint: .orange)
+                }
+            }
+
+            HStack(spacing: 7) {
+                capsuleButton("Start focus", tint: .orange, height: 34) { actions.startFocus() }
+                capsuleButton("Break", tint: .green, height: 34) { actions.startBreak() }
+            }
+        }
     }
 
     /// The dial face: the length you are choosing, the rule you choose it on,
@@ -180,7 +247,7 @@ public struct TimerCardView: View {
     private var dial: some View {
         VStack(spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("\(dialledMinutes)")
+                Text("\(readyMinutes)")
                     .font(.system(size: 34, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
                     .monospacedDigit()
@@ -188,14 +255,17 @@ public struct TimerCardView: View {
                     // the value is what changes as you drag, and the unit is
                     // only there so the number means something.
                     .contentTransition(.numericText())
-                Text(dialledMinutes < 60 ? "min" : DurationDial.spoken(dialledMinutes))
+                Text(readyMinutes < 60 ? "min" : DurationDial.spoken(readyMinutes))
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.45))
             }
-            .animation(Motion.medium, value: dialledMinutes)
+            .animation(Motion.medium, value: readyMinutes)
 
             DurationDialView(
-                minutes: $dialledMinutes,
+                minutes: Binding(
+                    get: { readyMinutes },
+                    set: { dialledMinutes = $0 }
+                ),
                 tint: tint,
                 setDragging: actions.setDragging
             )
@@ -203,22 +273,12 @@ public struct TimerCardView: View {
             HStack(spacing: 7) {
                 capsuleButton("Back", tint: nil) { isDialling = false }
                 capsuleButton("Start", tint: tint) {
-                    actions.startCustom(dialledMinutes)
+                    actions.startCustom(readyMinutes)
                     isDialling = false
                 }
             }
         }
         .transition(.opacity)
-    }
-
-    /// The neutral chips: recents first, the defaults filling what is left.
-    private var quickMinutes: [Int] {
-        let slots = isCompactWidth ? 2 : 3
-        var minutes = payload.recents
-        for fallback in [15, 45, 60] where minutes.count < slots && !minutes.contains(fallback) {
-            minutes.append(fallback)
-        }
-        return Array(minutes.prefix(slots))
     }
 
     /// "15m", "1h", "1h 30m" — a chip label for a length in minutes.
@@ -303,10 +363,26 @@ public struct TimerCardView: View {
                 .accessibilityValue("\(TimerCardView.clock(payload.remaining)) remaining")
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(payload.isFinished ? "\(payload.label) done" : payload.label)
+                    Text(payload.label)
                         .font(.cardFigure)
                         .foregroundStyle(tint)
                         .lineLimit(1)
+                    // Paused is said, not implied. The dimmed accent alone was
+                    // the only sign, and a countdown that has simply stopped
+                    // moving reads as a frozen app rather than a paused timer.
+                    if !payload.isRunning {
+                        Text("Paused")
+                            .font(.cardCaption)
+                            .foregroundStyle(.white.opacity(0.6))
+                    } else if let ends = endsAtText {
+                        // What the countdown means in the clock on the wall.
+                        Text(ends)
+                            .font(.cardCaption)
+                            .foregroundStyle(.white.opacity(0.5))
+                            .lineLimit(1)
+                            .accessibilityLabel("Ends at")
+                            .accessibilityValue(ends)
+                    }
                     if payload.completedSessions > 0 {
                         CycleDots(completed: payload.completedSessions, tint: tint)
                     }
@@ -330,16 +406,91 @@ public struct TimerCardView: View {
             // capsules spanning the card, Cancel in the neutral wash, the
             // pause carrying the accent. Skip exists only inside a pomodoro
             // cycle — a one-off countdown has nowhere to skip to.
+            // Pause is what this card is for; Cancel throws the timer away and
+            // is drawn as the quieter thing it is, rather than as an equal
+            // sharing the row with it.
             HStack(spacing: 8) {
-                capsuleButton("Cancel", tint: nil) { actions.cancel() }
                 capsuleButton(payload.isRunning ? "Pause" : "Resume", tint: tint) {
                     actions.toggle()
                 }
                 if !payload.isCustom {
                     capsuleButton("Skip", tint: nil) { actions.skip() }
                 }
+                quietButton("Cancel") { actions.cancel() }
             }
         }
+    }
+
+    /// When the running countdown reaches zero, as a clock time.
+    private var endsAtText: String? {
+        guard payload.isRunning,
+              TimerReadout.showsEndTime(remaining: payload.remaining),
+              let end = TimerReadout.endsAt(remaining: payload.remaining, now: Date())
+        else { return nil }
+        return "Ends at \(Self.clockTime.string(from: end))"
+    }
+
+    /// The user's own clock format — a 24-hour region must not be shown 3:42 PM.
+    private static let clockTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.setLocalizedDateFormatFromTemplate("jm")
+        return formatter
+    }()
+
+    /// A finished timer, and the two things worth doing about it.
+    ///
+    /// It used to wear the running card's controls — Cancel, Pause, Skip — for
+    /// something with nothing left to pause or skip, and it cleared itself
+    /// after twelve seconds whether or not anyone had looked. Finishing is its
+    /// own state: say so, and offer the two things that follow it.
+    private var finished: some View {
+        VStack(spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(payload.label) done")
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(Self.lengthSentence(payload.total))
+                        .font(.cardCaption)
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 8) {
+                capsuleButton("Repeat", tint: nil) {
+                    actions.startCustom(max(1, Int(payload.total / 60)))
+                }
+                capsuleButton("Done", tint: tint) { actions.dismissFinished() }
+            }
+        }
+    }
+
+    /// "25 minutes", for the line under a finished timer.
+    static func lengthSentence(_ total: TimeInterval) -> String {
+        let minutes = max(1, Int((total / 60).rounded()))
+        return minutes == 1 ? "1 minute" : "\(minutes) minutes"
+    }
+
+    /// A button that does not compete: the same target, without the wash
+    /// behind it. For the action a card offers but does not recommend.
+    private func quietButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(height: 36)
+                .padding(.horizontal, 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableCircleStyle())
     }
 
     /// The stopwatch's capsules, six points shorter than the timer's, and its
@@ -532,6 +683,10 @@ public struct TimerActions {
     public var startBreak: () -> Void
     /// A one-off countdown of the given minutes — the quick-timer chips.
     public var startCustom: (Int) -> Void
+    /// Takes the completion card away — the "Done" a finished timer offers,
+    /// so the card ends when the user says so rather than when it times out.
+    public var dismissFinished: () -> Void
+
     /// Latches a drag in flight, so the card stays open while the pointer
     /// wanders off it — the same latch the volume sliders use. Without it,
     /// dialling a length is a race between the drag and the card closing under
@@ -551,11 +706,13 @@ public struct TimerActions {
         startBreak: @escaping () -> Void = {},
         startCustom: @escaping (Int) -> Void = { _ in },
         setDragging: @escaping (Bool) -> Void = { _ in },
+        dismissFinished: @escaping () -> Void = {},
         stopwatchToggle: @escaping () -> Void = {},
         stopwatchLap: @escaping () -> Void = {},
         stopwatchReset: @escaping () -> Void = {}
     ) {
         self.setDragging = setDragging
+        self.dismissFinished = dismissFinished
         self.stopwatchToggle = stopwatchToggle
         self.stopwatchLap = stopwatchLap
         self.stopwatchReset = stopwatchReset
@@ -615,6 +772,7 @@ struct SegmentPicker: View {
     var body: some View {
         HStack(spacing: 2) {
             segment(.timer, symbol: "timer", title: "Timer")
+            segment(.focus, symbol: "brain.head.profile", title: "Focus")
             segment(.stopwatch, symbol: "stopwatch", title: "Stopwatch")
         }
         .padding(2)

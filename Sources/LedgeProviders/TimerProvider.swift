@@ -314,6 +314,19 @@ public final class TimerProvider: ActivityProvider {
         rest()
     }
 
+    /// Takes the completion card away, because the user has read it.
+    ///
+    /// It clears itself after twelve seconds either way; this is the "Done"
+    /// button, and the point of the button is that finishing something should
+    /// have an end the user performs rather than one they wait out.
+    public func dismissFinished() {
+        cancelHandOver()
+        continuation?.yield(.retract(Self.finishedActivityID))
+        // What the card was covering comes back: the ready card, or the
+        // stopwatch if one is running.
+        rest()
+    }
+
     // MARK: - Stopwatch
 
     /// Start, or stop — the single primary button of the stopwatch face.

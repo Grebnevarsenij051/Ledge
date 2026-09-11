@@ -565,6 +565,19 @@ struct GalleryView: View {
                             )
                             .frame(width: 348)
                         }
+                        // Paused and finished are states nobody can click their
+                        // way to on demand, so the gallery holds them.
+                        card {
+                            TimerCardView(payload: PreviewFixtures.payload(of: PreviewFixtures.timerFinished))
+                                .frame(width: 348)
+                        }
+                        card {
+                            TimerCardView(
+                                payload: PreviewFixtures.payload(of: PreviewFixtures.timerIdle),
+                                startsOnFace: .focus
+                            )
+                            .frame(width: 348)
+                        }
                         card {
                             TimerCardView(payload: PreviewFixtures.payload(of: PreviewFixtures.timer))
                                 .frame(width: 348)
@@ -770,6 +783,25 @@ enum PreviewFixtures {
     /// The day the preview is being looked at, so today's column has
     /// something in it whenever the gallery is rendered.
     static let todayDay = Calendar.current.component(.day, from: Date())
+
+    static let timerFinished = Activity(
+        id: ActivityID(kind: .timer, source: "finished"),
+        createdAt: 0,
+        payload: .timer(TimerPayload(
+            label: "Timer",
+            remaining: 0,
+            total: 25 * 60,
+            isRunning: false,
+            isFinished: true,
+            isBreak: false,
+            completedSessions: 0,
+            isCustom: true,
+            isIdle: false,
+            mode: .countdown,
+            stopwatch: StopwatchState(),
+            recents: [25, 5]
+        ))
+    )
 
     static let eventPayload = EventPayload(
             title: "Design review",
