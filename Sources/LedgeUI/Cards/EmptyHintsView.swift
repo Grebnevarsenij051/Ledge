@@ -95,7 +95,7 @@ public struct EmptyHintsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 8)
         .accessibilityElement(children: .contain)
         // No vertical padding: on a notchless display the cutout stand-in is
         // taller than the MacBook's, so the card has less room and the last row

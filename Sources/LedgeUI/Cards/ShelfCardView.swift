@@ -55,7 +55,7 @@ public struct ShelfCardView: View {
                 .padding(.horizontal, 1)
             }
         }
-        .padding(.horizontal, 15)
+        .padding(.horizontal, 7)
         .padding(.top, 10)
         .padding(.bottom, 14)
     }

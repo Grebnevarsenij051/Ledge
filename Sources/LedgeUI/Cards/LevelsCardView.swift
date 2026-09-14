@@ -100,7 +100,7 @@ public struct LevelsCardView: View {
                 if let display { actions.setDisplayBrightness(display.id, brightness) }
             }
         }
-        .padding(.horizontal, isCompactWidth ? 12 : 12)
+        .padding(.horizontal, isCompactWidth ? 12 : 8)
         .padding(.vertical, isCompactWidth ? 10 : 14)
         .onAppear(perform: snapshot)
         .onChange(of: liveLevel) { _, readout in

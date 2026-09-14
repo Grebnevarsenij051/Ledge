@@ -333,7 +333,7 @@ public struct NowPlayingCardView: View {
             if payload.isLive { liveBar } else { scrubber }
             transport
         }
-        .padding(.horizontal, 15)
+        .padding(.horizontal, 8)
         .padding(.top, 12)
         .padding(.bottom, 16)
         // The card is a doorway to the app that owns the music, the way
@@ -573,7 +573,7 @@ public struct NowPlayingCardView: View {
         // narrower ones so the capsules could be as wide as possible, and the
         // card visibly changed shape when the AirPlay button was pressed —
         // swapping the contents of a card should not move its edges.
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 8)
         // Reported here rather than only from the button, so the card is sized
         // correctly however the menu came to be open.
         .onAppear {
