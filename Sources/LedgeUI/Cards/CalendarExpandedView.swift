@@ -146,7 +146,7 @@ public struct CalendarExpandedView: View {
             // as breathing room, and the grid keeps its seven columns either
             // way. Titles still wrap to two lines rather than truncating.
             leftColumn(grid)
-                .frame(width: 132, alignment: .leading)
+                .frame(width: 126, alignment: .leading)
 
             monthColumn(grid)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -154,7 +154,7 @@ public struct CalendarExpandedView: View {
         // 22, symmetric: breathing room against both curved edges, paid for
         // inside (a narrower day column and tighter gap), not by widening
         // the card.
-        .padding(.horizontal, 22)
+        .padding(.horizontal, 18)
         .padding(.vertical, 14)
         // The card is sized by the shell, which cannot know which month is on
         // show — browsing is this view's own state. So it says.
@@ -310,10 +310,9 @@ public struct CalendarExpandedView: View {
             entryRowBody(entry)
         } else {
             Button {
-                let allowed = CharacterSet.urlPathAllowed
-                let escaped = entry.eventID.addingPercentEncoding(withAllowedCharacters: allowed)
-                    ?? entry.eventID
-                if let url = URL(string: "ical://ekevent/\(escaped)") {
+                // A repeating event's rows all carry the same identifier, so
+                // the occurrence goes with it or the link opens the series.
+                if let url = CalendarLink.url(eventID: entry.eventID, occurrence: entry.occurrence) {
                     openURL(url)
                 }
             } label: {
@@ -403,6 +402,12 @@ public struct CalendarExpandedView: View {
                         .font(.cardLabel)
                 }
                 .foregroundStyle(.white)
+                // Never compressed. Sharing a row with a 32pt date in a
+                // 126pt column, the capsule was the half that gave way — and
+                // a button whose label has been squeezed to "…" is a green
+                // pill that says nothing. The date can lose a point of its
+                // own width far more cheaply than this can lose its word.
+                .fixedSize()
                 .padding(.horizontal, 11)
                 .padding(.vertical, 5)
                 .background(Capsule().fill(.green.opacity(0.85)))

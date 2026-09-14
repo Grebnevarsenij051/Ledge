@@ -190,7 +190,7 @@ private final class CountingCalendarSource: CalendarSource {
         return await inner.eventDays(monthOffset: monthOffset)
     }
 
-    func events(monthOffset: Int) async -> [Int: [(title: String, time: String, eventID: String)]] {
+    func events(monthOffset: Int) async -> [Int: [(title: String, time: String, eventID: String, occurrence: Date?)]] {
         monthQueries += 1
         return await inner.events(monthOffset: monthOffset)
     }

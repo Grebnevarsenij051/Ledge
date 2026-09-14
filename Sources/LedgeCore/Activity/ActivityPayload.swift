@@ -634,14 +634,21 @@ public struct MonthDayEntry: Equatable, Sendable, Codable, Identifiable {
     /// Pre-formatted local time, or empty for an all-day event.
     public var time: String
 
+    /// The start of *this* occurrence, for an event that repeats — nil for one
+    /// that happens once. A recurring event has a single identifier for all of
+    /// its occurrences, so without this the link opens the series rather than
+    /// the row that was clicked. See `CalendarLink`.
+    public var occurrence: Date?
+
     /// The eventID folded in so two same-titled events at the same time (twin
     /// "Birthday" all-day entries) stay distinct rows for SwiftUI's diffing.
     public var id: String { "\(time)-\(title)-\(eventID)" }
 
-    public init(title: String, time: String = "", eventID: String = "") {
+    public init(title: String, time: String = "", eventID: String = "", occurrence: Date? = nil) {
         self.title = title
         self.time = time
         self.eventID = eventID
+        self.occurrence = occurrence
     }
 
     public init(from decoder: any Decoder) throws {
@@ -649,6 +656,7 @@ public struct MonthDayEntry: Equatable, Sendable, Codable, Identifiable {
         title = try c.decode(String.self, forKey: .title)
         time = try c.decodeIfPresent(String.self, forKey: .time) ?? ""
         eventID = try c.decodeIfPresent(String.self, forKey: .eventID) ?? ""
+        occurrence = try c.decodeIfPresent(Date.self, forKey: .occurrence)
     }
 }
 
