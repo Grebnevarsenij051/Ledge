@@ -2391,14 +2391,17 @@ public final class LedgeCoordinator {
     private func trailingDuoTarget(on key: CGDirectDisplayID) -> ActivityID? {
         guard let controller = displayPanels.controller(for: key),
               controller.geometry.isHardwareNotch,
-              let rect = closedRegions().first(where: { $0.key == key })?.rect
+              let regions = controller.compactRegions(for: restingPhase)
         else { return nil }
-        let zone = NotchLayout.compactZone(
-            x: NSEvent.mouseLocation.x,
-            restingRect: rect,
+        // The satellite's own rectangle first, then the island's own thirds.
+        // Measuring the thirds from a box that included the satellite moved
+        // the assumed cutout by half the gap, so a pointer on the island's
+        // trailing ear could read as the cutout and open nothing.
+        let zone = regions.zone(
+            at: NSEvent.mouseLocation,
             cutoutWidth: controller.geometry.notchSize.width
         )
-        guard zone == .trailing else { return nil }
+        guard zone == .trailing || zone == .satellite else { return nil }
 
         let musicIsMainIsland: Bool = {
             guard let playing = presentation.nowPlaying,
@@ -2436,16 +2439,19 @@ public final class LedgeCoordinator {
     /// on the album art or the level bar never registered — the panel stayed
     /// click-through and the HUD never widened until the pointer crossed the
     /// idle-sized centre.
-    private func closedRegions() -> [(key: CGDirectDisplayID, rect: CGRect)] {
-        let resting: NotchPhase
+    /// The phase the shape is resting at, for the purpose of where it answers
+    /// the pointer: an open card demotes to whatever it would show if the
+    /// cursor left.
+    private var restingPhase: NotchPhase {
         switch presentation.phase {
-        case .companion, .peek, .hud:
-            resting = presentation.phase
-        case .hover, .expanded:
-            resting = demotedRestingPhase
-        case .idle:
-            resting = .idle
+        case .companion, .peek, .hud: presentation.phase
+        case .hover, .expanded: demotedRestingPhase
+        case .idle: .idle
         }
+    }
+
+    private func closedRegions() -> [(key: CGDirectDisplayID, rect: CGRect)] {
+        let resting = restingPhase
         // The display whose overlay is drawn *open* — a hovered/pinned card,
         // or the widened HUD panel — offers its whole drawn shape as the entry
         // region, not the demoted strip. After an exit the tracker holds no
@@ -2455,12 +2461,16 @@ public final class LedgeCoordinator {
         // close delay and then closed under the cursor, and a pinned card's
         // release timer was never cancelled by the return.
         let openDisplay = drawnOpenDisplay
-        return displayPanels.all.compactMap { controller in
+        return displayPanels.all.flatMap { controller -> [(key: CGDirectDisplayID, rect: CGRect)] in
             if let openDisplay, controller.displayID == openDisplay,
                let open = openRegion(openDisplay) {
-                return (controller.displayID, open)
+                return [(controller.displayID, open)]
             }
-            return controller.shapeRect(for: resting).map { (controller.displayID, $0) }
+            // The satellite is a second rectangle under the same display, not
+            // a bigger one: the pointer answers on the island and on the
+            // circle, and over the gap between them it is on the desktop.
+            guard let regions = controller.compactRegions(for: resting) else { return [] }
+            return regions.rects.map { (controller.displayID, $0) }
         }
     }
 

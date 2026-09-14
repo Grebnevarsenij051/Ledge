@@ -258,12 +258,12 @@ enum StateGallery {
             presentation.selected = PreviewFixtures.stopwatchRunning
             presentation.count = 3
         },
-        State(name: "hover-music") { presentation in
-            presentation.phase = .hover
-            presentation.selected = PreviewFixtures.nowPlaying
-            presentation.isHovering = true
-            presentation.count = 3
-        },
+        // `hover` is not in this catalogue. It draws the same card at the same
+        // size as `expanded` — the difference between them is whether a click
+        // has pinned it, which a still image cannot show. Keeping it meant two
+        // states exporting identical bytes, which is the very thing the sweep
+        // fails on, and it was right to.
+
     ]
 
     static func state(named name: String) -> State? {

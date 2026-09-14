@@ -354,4 +354,41 @@ public final class LedgePanelController {
         )
         return rect
     }
+
+    /// The island and, when one is out, the satellite — as two rectangles.
+    ///
+    /// Never their union: the space between them is bare desktop, and a
+    /// bounding box would also move the island's midpoint, which is what the
+    /// leading/cutout/trailing split measures from.
+    public func compactRegions(
+        for phase: NotchPhase, hudHovered: Bool = false, hudExtraHeight: CGFloat = 0
+    ) -> CompactRegions? {
+        guard let island = shapeRect(
+            for: phase, hudHovered: hudHovered, hudExtraHeight: hudExtraHeight
+        ) else { return nil }
+        guard presentation.satellite(phase: phase) != nil else {
+            return CompactRegions(island: island)
+        }
+        let layout = presentation.layout(
+            preferences: preferences, geometry: geometry, phase: phase,
+            hudHovered: hudHovered, hudExtraHeight: hudExtraHeight
+        )
+        let seat = NotchLayout.satelliteRect(
+            islandSize: layout.boundingSize,
+            geometry: geometry,
+            gutterRadius: preferences.gutterRadius,
+            offset: preferences.satelliteOffset
+        )
+        // Screen coordinates run bottom-up; the seat's y is measured down from
+        // the island's top, which is the screen's top edge.
+        return CompactRegions(
+            island: island,
+            satellite: CGRect(
+                x: island.minX + seat.minX,
+                y: island.maxY - seat.minY - seat.height,
+                width: seat.width,
+                height: seat.height
+            )
+        )
+    }
 }

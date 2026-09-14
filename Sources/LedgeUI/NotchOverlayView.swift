@@ -182,6 +182,64 @@ public final class NotchPresentation {
     /// Whose measurement is being used right now. For tests and diagnostics.
     public var measuredCards: Set<ActivityID> { Set(cardContentHeights.keys) }
 
+    /// The timer session while one is genuinely running or paused mid-leg.
+    var runningTimerSession: Activity? {
+        guard let session = timerSession,
+              case .timer(let payload) = session.payload,
+              !payload.isIdle
+        else { return nil }
+        return session
+    }
+
+    /// The now-playing activity, only when it has business in the ears —
+    /// playing, and something listened to rather than watched.
+    var playingNowPlaying: Activity? {
+        guard let activity = nowPlaying, activity.restsInEars else { return nil }
+        return activity
+    }
+
+    /// Who holds the satellite seat right now, if anyone. The freshest
+    /// transient wins the dwell; then the running timer; then the recording
+    /// indicator — and the timer never orbits itself.
+    public func satellite(phase: NotchPhase) -> SatelliteContent? {
+        guard phase == .companion else { return nil }
+        // Nothing orbits an announcement. The satellite is the timer's own
+        // readout more often than not, and a ring counting beside "Break time"
+        // is the same contradiction the ears would be.
+        guard announcement == nil else { return nil }
+        let timerContent: SatelliteContent? = {
+            guard let session = timerSession,
+                  case .timer(let payload) = session.payload,
+                  !payload.isIdle
+            else { return nil }
+            return .timer(
+                remaining: payload.remaining,
+                total: payload.total,
+                isBreak: payload.isBreak,
+                isRunning: payload.isRunning
+            )
+        }()
+        let privacyContent: SatelliteContent? = {
+            guard let activity = privacyActive,
+                  case .privacy(let payload) = activity.payload,
+                  payload.cameraActive || payload.micActive
+            else { return nil }
+            // Dictation is drawn as itself, in the island or in this seat, and
+            // must not also appear here as a bare microphone: one microphone,
+            // one indicator, and the user asked for the one that says what it
+            // is actually doing.
+            if payload.isSystemSpeech, !payload.cameraActive { return nil }
+            return .privacy(camera: payload.cameraActive, microphone: payload.micActive)
+        }()
+        return SatelliteArbiter.resolve(
+            transient: hudSatellite,
+            privacy: privacyContent,
+            timer: timerContent,
+            timerIsMainIsland: playingNowPlaying == nil,
+            dictation: dictationActive == nil ? nil : .dictation
+        )
+    }
+
     public init() {}
 }
 
@@ -319,7 +377,8 @@ public struct NotchOverlayView: View {
             // old test, and it is about the queue's population, not music: a
             // second standing card faked a companion, and solo music failed
             // the test and vanished to idle during a hover elsewhere.
-            let hasRestingContent = playingNowPlaying != nil || runningTimerSession != nil
+            let hasRestingContent = presentation.playingNowPlaying != nil
+                || presentation.runningTimerSession != nil
             return hasRestingContent ? .companion : .idle
         default:
             return presentation.phase
@@ -356,70 +415,17 @@ public struct NotchOverlayView: View {
         )
     }
 
-    /// The timer session while one is genuinely running or paused mid-leg.
-    private var runningTimerSession: Activity? {
-        guard let session = presentation.timerSession,
-              case .timer(let payload) = session.payload,
-              !payload.isIdle
-        else { return nil }
-        return session
-    }
-
-    /// The now-playing activity, only when it has business in the ears —
-    /// playing, and something listened to rather than watched.
-    private var playingNowPlaying: Activity? {
-        guard let activity = presentation.nowPlaying, activity.restsInEars else { return nil }
-        return activity
-    }
-
-    /// Who holds the satellite seat right now, if anyone. The freshest
-    /// transient wins the dwell; then the running timer; then the recording
-    /// indicator — and the timer never orbits itself.
-    private var satelliteContent: SatelliteContent? {
-        guard phase == .companion else { return nil }
-        // Nothing orbits an announcement. The satellite is the timer's own
-        // readout more often than not, and a ring counting beside "Break time"
-        // is the same contradiction the ears would be.
-        guard presentation.announcement == nil else { return nil }
-        let timerContent: SatelliteContent? = {
-            guard let session = presentation.timerSession,
-                  case .timer(let payload) = session.payload,
-                  !payload.isIdle
-            else { return nil }
-            return .timer(
-                remaining: payload.remaining,
-                total: payload.total,
-                isBreak: payload.isBreak,
-                isRunning: payload.isRunning
-            )
-        }()
-        let privacyContent: SatelliteContent? = {
-            guard let activity = presentation.privacyActive,
-                  case .privacy(let payload) = activity.payload,
-                  payload.cameraActive || payload.micActive
-            else { return nil }
-            // Dictation is drawn as itself, in the island or in this seat, and
-            // must not also appear here as a bare microphone: one microphone,
-            // one indicator, and the user asked for the one that says what it
-            // is actually doing.
-            if payload.isSystemSpeech, !payload.cameraActive { return nil }
-            return .privacy(camera: payload.cameraActive, microphone: payload.micActive)
-        }()
-        return SatelliteArbiter.resolve(
-            transient: presentation.hudSatellite,
-            privacy: privacyContent,
-            timer: timerContent,
-            timerIsMainIsland: playingNowPlaying == nil,
-            dictation: presentation.dictationActive == nil ? nil : .dictation
-        )
-    }
-
     /// How much the island's trailing side gives up while the satellite is
     /// out: the whole trailing ear, so the body's right edge lands at the
     /// hardware cutout with only the gutter flare beyond it.
     private var satelliteCollapse: CGFloat {
-        satelliteContent != nil ? NotchLayout.hudEarWidth : 0
+        satelliteContent != nil ? NotchLayout.earWidth(for: geometry) : 0
     }
+
+    /// Who holds the satellite seat, resolved once on the presentation so the
+    /// shell's hit testing and this drawing cannot disagree about whether
+    /// there is one.
+    private var satelliteContent: SatelliteContent? { presentation.satellite(phase: phase) }
 
     public var body: some View {
         let layout = layout
@@ -474,12 +480,16 @@ public struct NotchOverlayView: View {
                 // Anchored by its *leading* edge, a fixed distance past the
                 // island's pulled-in right edge — so every tenant, circle or
                 // timer capsule, keeps the same gap regardless of its width.
-                let seat = layout.boundingSize.width
-                    - (preferences.gutterRadius + NotchLayout.hudEarWidth)
-                    + (preferences.satelliteOffset.isFinite
-                        ? min(max(preferences.satelliteOffset, -60), 200) : 5)
-                SatelliteView(content: content, diameter: geometry.notchSize.height + 1)
-                    .offset(x: seat)
+                // The same rectangle the shell hit-tests against, so what is
+                // drawn and what answers the pointer cannot drift apart.
+                let seat = NotchLayout.satelliteRect(
+                    islandSize: layout.boundingSize,
+                    geometry: geometry,
+                    gutterRadius: preferences.gutterRadius,
+                    offset: preferences.satelliteOffset
+                )
+                SatelliteView(content: content, diameter: seat.width)
+                    .offset(x: seat.minX)
                     .transition(reduceMotion ? .opacity : .asymmetric(
                         insertion: .offset(x: -(geometry.notchSize.height + 9))
                             .combined(with: .scale(scale: 0.4))
@@ -676,8 +686,8 @@ public struct NotchOverlayView: View {
             else if let shown = phase == .companion
                 ? CompactRest.resolve(
                     farewell: presentation.farewell,
-                    playingNowPlaying: playingNowPlaying,
-                    runningTimer: runningTimerSession,
+                    playingNowPlaying: presentation.playingNowPlaying,
+                    runningTimer: presentation.runningTimerSession,
                     closeEvent: presentation.closeEvent,
                     nowPlaying: presentation.lingeringNowPlaying,
                     selected: presentation.selected,

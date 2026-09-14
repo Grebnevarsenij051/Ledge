@@ -559,5 +559,115 @@ struct BottomRoomTests {
         )
         #expect(media.height == 300, "still the slider's to set")
     }
+
+    /// The island and the card are one width on *every* Mac, not only the
+    /// reference one. The compact phases used the raw ear preference while the
+    /// cards scaled it, so a 16-inch drew a 296pt island under a 313pt card.
+    @Test("Island and card stay equal at every scale")
+    func islandMatchesCardAtEveryScale() {
+        for (notch, scale) in [(CGFloat(179), CGFloat(1.0)), (190, 1.03), (200, 1.18)] {
+            let geo = NotchGeometry(
+                screenSize: CGSize(width: 1470, height: 956),
+                notchSize: CGSize(width: notch, height: 32),
+                notchCenterX: 735, isHardwareNotch: true, displayScale: scale
+            )
+            let island = NotchLayout.hud(geo, bottomRadius: 12, gutterRadius: 8).bodySize.width
+            let card = NotchLayout.cardWidth(kind: nil, geometry: geo)
+            #expect(abs(island - card) < 0.001,
+                "island \(island) against card \(card) at scale \(scale)")
+        }
+    }
+
+    @Test("A peek is the same width as the island it grows from")
+    func peekMatchesTheIsland() {
+        let geo = NotchGeometry(
+            screenSize: CGSize(width: 1728, height: 1117),
+            notchSize: CGSize(width: 200, height: 38),
+            notchCenterX: 864, isHardwareNotch: true, displayScale: 1.18
+        )
+        let peek = NotchLayout.peek(geo, bottomRadius: 12, gutterRadius: 8).bodySize.width
+        let hud = NotchLayout.hud(geo, bottomRadius: 12, gutterRadius: 8).bodySize.width
+        #expect(abs(peek - hud) < 0.001)
+    }
 }
 
+
+/// Where the detached satellite sits.
+///
+/// The view drew it from a seat computed inline while the shell hit-tested the
+/// island's bounding box, which does not contain the satellite at all — so a
+/// satellite pushed out by the offset preference was drawn somewhere the
+/// pointer was never told about. One rectangle now answers all three: drawing,
+/// hover, and which card a click belongs to.
+@Suite("The satellite's seat")
+struct SatelliteSeatTests {
+
+    private func geometry(
+        scale: CGFloat, notch: CGFloat = 179, cutoutHeight: CGFloat = 32
+    ) -> NotchGeometry {
+        NotchGeometry(
+            screenSize: CGSize(width: 1470, height: 956),
+            notchSize: CGSize(width: notch, height: cutoutHeight),
+            notchCenterX: 735, isHardwareNotch: true, displayScale: scale
+        )
+    }
+
+    private func island(_ geometry: NotchGeometry) -> CGSize {
+        NotchLayout.hud(geometry, bottomRadius: 12, gutterRadius: 8).boundingSize
+    }
+
+    @Test("It sits past the island's trailing edge, not inside it")
+    func sitsOutside() {
+        let geo = geometry(scale: 1)
+        let size = island(geo)
+        let seat = NotchLayout.satelliteRect(
+            islandSize: size, geometry: geo, gutterRadius: 8, offset: 5
+        )
+        #expect(seat.width == geo.notchSize.height + 1, "a circle the height of the cutout")
+        #expect(seat.midY == size.height / 2, "vertically centred on the island")
+        #expect(seat.maxX > size.width - NotchLayout.earWidth(for: geo),
+            "past the ear the island gives up while it is out")
+    }
+
+    /// The nudge is why this exists: at the far end of its range the circle is
+    /// well outside the island, which is exactly where hit testing used to
+    /// stop.
+    @Test("The offset moves it, and the rectangle moves with it")
+    func offsetMovesIt() {
+        let geo = geometry(scale: 1)
+        let size = island(geo)
+        let near = NotchLayout.satelliteRect(islandSize: size, geometry: geo, gutterRadius: 8, offset: 0)
+        let far = NotchLayout.satelliteRect(islandSize: size, geometry: geo, gutterRadius: 8, offset: 200)
+        #expect(far.minX - near.minX == 200)
+        #expect(far.minX > size.width, "entirely outside the island at the far end")
+    }
+
+    @Test("Nonsense in the preference cannot throw it off screen")
+    func offsetIsClamped() {
+        let geo = geometry(scale: 1)
+        let size = island(geo)
+        let sane = NotchLayout.satelliteRect(islandSize: size, geometry: geo, gutterRadius: 8, offset: 5)
+        let nan = NotchLayout.satelliteRect(islandSize: size, geometry: geo, gutterRadius: 8, offset: .nan)
+        let huge = NotchLayout.satelliteRect(islandSize: size, geometry: geo, gutterRadius: 8, offset: 9_000)
+        let tiny = NotchLayout.satelliteRect(islandSize: size, geometry: geo, gutterRadius: 8, offset: -9_000)
+        #expect(nan == sane, "not a number, so the default seat")
+        #expect(huge.minX - sane.minX == 195, "clamped at 200")
+        #expect(tiny.minX - sane.minX == -65, "clamped at -60")
+    }
+
+    /// A bigger panel moves the ear the seat is measured from, so the seat
+    /// moves with it rather than landing inside the island on a 16-inch.
+    @Test("It follows the ears when the panel scales")
+    func followsTheScale() {
+        let reference = geometry(scale: 1)
+        let large = geometry(scale: 1.18, notch: 200, cutoutHeight: 38)
+        let a = NotchLayout.satelliteRect(
+            islandSize: island(reference), geometry: reference, gutterRadius: 8, offset: 5
+        )
+        let b = NotchLayout.satelliteRect(
+            islandSize: island(large), geometry: large, gutterRadius: 8, offset: 5
+        )
+        #expect(b.minX > a.minX, "a wider island seats it further out")
+        #expect(b.width > a.width, "and a taller cutout makes it bigger")
+    }
+}
