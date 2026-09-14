@@ -40,37 +40,6 @@ struct TimerReadoutTests {
         #expect(!TimerReadout.showsEndTime(remaining: .infinity), "nor for nonsense")
     }
 
-    // MARK: - What it offers
-
-    @Test("A fresh install offers the classics")
-    func defaultPresets() {
-        #expect(TimerReadout.presets(recents: []) == TimerReadout.defaults)
-    }
-
-    @Test("What was used last comes first, and the classics fill the rest")
-    func recentsLead() {
-        #expect(TimerReadout.presets(recents: [12]) == [12, 5, 25])
-        #expect(TimerReadout.presets(recents: [12, 90]) == [12, 90, 5])
-    }
-
-    @Test("Three, however many recents there are")
-    func alwaysThree() {
-        #expect(TimerReadout.presets(recents: [1, 2, 3, 4, 5, 6]).count == 3)
-        #expect(TimerReadout.presets(recents: [1, 2, 3, 4, 5, 6]) == [1, 2, 3])
-    }
-
-    @Test("A length is never offered twice")
-    func noDuplicates() {
-        #expect(TimerReadout.presets(recents: [25, 25, 5]) == [25, 5, 45])
-        let chosen = TimerReadout.presets(recents: [5, 45, 25])
-        #expect(Set(chosen).count == chosen.count)
-    }
-
-    @Test("Nonsense recents are ignored rather than offered")
-    func ignoresNonsense() {
-        #expect(TimerReadout.presets(recents: [0, -5]) == TimerReadout.defaults)
-    }
-
     // MARK: - What it opens on
 
     @Test("The card opens on the last length used")

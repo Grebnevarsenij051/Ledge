@@ -22,6 +22,11 @@ struct DurationDialView: View {
     /// pointer leaves it. The same latch the volume sliders use.
     let setDragging: (Bool) -> Void
 
+    /// One tick as the value crosses a minute — the same feedback the number
+    /// gives when it crosses a detent, so the two ways of setting a length
+    /// feel like one instrument.
+    var haptic: () -> Void = {}
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Where the drag started, and how far it has gone. Held apart so the rule
@@ -73,7 +78,10 @@ struct DurationDialView: View {
         .onKeyPress(keys: [.downArrow]) { _ in nudge(by: -DurationDial.majorEvery); return .handled }
     }
 
-    private static let height: CGFloat = 34
+    /// The rule's own height. Internal because the card reveals the rule by
+    /// growing a window to exactly this, rather than by sliding it in over
+    /// whatever is above it.
+    static let height: CGFloat = 34
 
     // MARK: - The rule
 
@@ -148,7 +156,10 @@ struct DurationDialView: View {
                     anchor: anchor ?? minutes,
                     translation: translation
                 )
-                if landed != minutes { minutes = landed }
+                if landed != minutes {
+                    minutes = landed
+                    haptic()
+                }
             }
             .onEnded { _ in
                 // The value is already where the drag left it; this only puts

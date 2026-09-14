@@ -24,12 +24,4 @@ struct StopwatchClockTests {
         #expect(TimerCardView.stopwatchClock(.infinity).main == "0:00")
         #expect(TimerCardView.stopwatchClock(1_000_000).main == "99:59:59", "the clamp caps the display")
     }
-
-    @Test("Chip labels: minutes under an hour, hours past it")
-    func chipLabels() {
-        #expect(TimerCardView.minutesLabel(15) == "15m")
-        #expect(TimerCardView.minutesLabel(60) == "1h")
-        #expect(TimerCardView.minutesLabel(90) == "1h 30m")
-        #expect(TimerCardView.minutesLabel(0) == "1m")
-    }
 }

@@ -29,29 +29,6 @@ public enum TimerReadout {
         remaining.isFinite && remaining >= 60
     }
 
-    /// The lengths offered on the ready card, freshest first.
-    ///
-    /// Three, not five: a row of chips is a menu, and a menu of five is read
-    /// rather than recognised. What the user has actually used comes first,
-    /// and the classics fill whatever is left — so the card is familiar on the
-    /// first day and personal by the second.
-    public static func presets(recents: [Int], slots: Int = 3) -> [Int] {
-        var chosen: [Int] = []
-        for minutes in recents where minutes > 0 && !chosen.contains(minutes) {
-            chosen.append(minutes)
-            if chosen.count == slots { return chosen }
-        }
-        for fallback in defaults where !chosen.contains(fallback) {
-            chosen.append(fallback)
-            if chosen.count == slots { return chosen }
-        }
-        return chosen
-    }
-
-    /// The lengths a timer offers before it knows anything about its user:
-    /// a short one, a working block, and a long one.
-    public static let defaults = [5, 25, 45]
-
     /// The length a fresh ready card opens on, and what Start would use.
     public static func openingLength(recents: [Int], focusMinutes: Int) -> Int {
         // What they used last, or the length of their focus block — which is
