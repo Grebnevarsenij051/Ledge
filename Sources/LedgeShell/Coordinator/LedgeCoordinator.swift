@@ -85,7 +85,9 @@ public final class LedgeCoordinator {
     /// the pointer poll and the brightness watcher stand down; the panels are
     /// not visible to anyone, and a laptop left locked overnight should not
     /// spend its battery watching for a hover that cannot happen.
-    private var screensDark = false
+    /// Why the screen is not worth polling. Each reason is remembered on its
+    /// own; see `ScreenDormancy` for what one shared flag got wrong.
+    private var dormancy = ScreenDormancy()
 
     /// "Reset all settings" rewrites every preference at once, and three
     /// things hold their own copy of one: the shelf store its items, the
@@ -255,10 +257,9 @@ public final class LedgeCoordinator {
         refreshSettingsModel()
     }
 
-    private func setScreensDark(_ dark: Bool) {
-        guard dark != screensDark else { return }
-        screensDark = dark
-        if dark {
+    private func setScreensDark(_ reason: ScreenDormancy.Reason, _ active: Bool) {
+        guard dormancy.set(reason, active) else { return }
+        if dormancy.isDark {
             hoverTracker?.stop()
             hud.setDormant(true)
             Self.log.notice("screens dark — pointer and brightness polling paused")
@@ -1575,6 +1576,17 @@ public final class LedgeCoordinator {
                 self?.timerProviderRef?.startCustom(minutes: minutes)
                 self?.activities.selectWhenAvailable(TimerProvider.activityID)
             },
+            // The duration passing a detent. `.alignment` is the tick the
+            // system gives for a value snapping into place — the same feel as
+            // a window edge meeting a guide — and `.drawCompleted` lets the
+            // trackpad fire it with the frame the number moved in rather than
+            // ahead of it. Respects the user's "Play feedback" setting on its
+            // own; nothing here needs to check it.
+            haptic: {
+                NSHapticFeedbackManager.defaultPerformer.perform(
+                    .alignment, performanceTime: .drawCompleted
+                )
+            },
             // Dialling a length is a drag like any other: the card must not
             // close under a pointer that has wandered off it mid-drag. Only
             // the hover latch — the Levels card's quiet window is about
@@ -1875,7 +1887,7 @@ public final class LedgeCoordinator {
         preferences.onReset = {}
         focusBaseline?.stopWatching()
         focusBaseline = nil
-        screensDark = false
+        dormancy.clear()
         satelliteDismiss?.cancel()
         satelliteDismiss = nil
         parkedSatellite = nil
@@ -2674,25 +2686,26 @@ public final class LedgeCoordinator {
         // tracker (30 Hz) and the HUD's brightness watcher (2 Hz) stop while
         // the displays sleep or the screen is locked, and resume on wake. The
         // reducer state is left alone — a resting companion is still resting.
-        for name in [NSWorkspace.screensDidSleepNotification] {
+        for (name, asleep) in [
+            (NSWorkspace.screensDidSleepNotification, true),
+            (NSWorkspace.screensDidWakeNotification, false),
+        ] {
             observerTokens.append(NSWorkspace.shared.notificationCenter.addObserver(
                 forName: name, object: nil, queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.setScreensDark(true) }
+                MainActor.assumeIsolated { self?.setScreensDark(.displaysAsleep, asleep) }
             })
         }
-        observerTokens.append(NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.setScreensDark(false) }
-        })
         // The lock screen does not sleep the displays right away; it posts on
         // the distributed centre instead. Same treatment.
-        for (name, dark) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
+        // The lock screen does not sleep the displays right away, and they
+        // wake again on their own while the session stays locked — which is
+        // why this is its own reason rather than the same flag.
+        for (name, locked) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
             distributedTokens.append(DistributedNotificationCenter.default().addObserver(
                 forName: Notification.Name(name), object: nil, queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.setScreensDark(dark) }
+                MainActor.assumeIsolated { self?.setScreensDark(.sessionLocked, locked) }
             })
         }
 
