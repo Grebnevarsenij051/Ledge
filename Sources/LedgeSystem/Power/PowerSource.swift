@@ -104,6 +104,14 @@ public final class IOKitPowerSource: PowerSource {
     private var context: PowerNotificationContext?
     private var onChange: ((PowerSnapshot) -> Void)?
 
+    /// Low Power Mode is not a power *source* property, so IOKit's source
+    /// notification is not obliged to fire when it is switched on or off from
+    /// Settings or from the battery menu. Nothing else was watching it, so the
+    /// flag only ever changed when some unrelated power event happened to
+    /// arrive. This is that missing signal; `deliver()` drops it again when
+    /// nothing actually differs.
+    private var lowPowerToken: NSObjectProtocol?
+
     /// Last value delivered, so the frequent notifications while charging do
     /// not push identical snapshots through the card.
     private var last: PowerSnapshot?
@@ -236,11 +244,27 @@ public final class IOKitPowerSource: PowerSource {
         context.source = source
         self.context = context
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+
+        lowPowerToken = NotificationCenter.default.addObserver(
+            forName: .NSProcessInfoPowerStateDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.deliver() }
+        }
     }
 
     public func stopWatching() {
         onChange = nil
         last = nil
+
+        // Removed before the IOKit teardown below and unconditionally: a
+        // notification already queued on the main queue must not reach a
+        // watcher that has stopped.
+        if let lowPowerToken {
+            NotificationCenter.default.removeObserver(lowPowerToken)
+            self.lowPowerToken = nil
+        }
 
         guard let context else { return }
         self.context = nil
