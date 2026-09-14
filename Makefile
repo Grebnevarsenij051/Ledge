@@ -85,6 +85,11 @@ preview: build
 lint:
 	@./Scripts/lint-imports.sh
 
+## Every card, state and scale to a dated folder — the before/after of a change
+## you can actually diff. `make gallery` for both scales, or pass your own.
+gallery: build
+	@./Scripts/gallery.sh
+
 ## Stream the app's own log output.
 tail:
 	log stream --style compact --predicate 'subsystem == "$(BUNDLE_ID)"'

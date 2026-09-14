@@ -73,6 +73,13 @@ final class PreviewDelegate: NSObject, NSApplicationDelegate {
     private let previewsOnboarding = ProcessInfo.processInfo.environment["LEDGE_GALLERY_ONLY"] == "onboarding"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // The parity gallery: one named state, in the production container, at
+        // an explicit scale, exported whole. Handled before anything else
+        // because it builds its own window and answers on stdout.
+        if let name = ProcessInfo.processInfo.environment["LEDGE_GALLERY_STATE"] {
+            renderState(named: name)
+            return
+        }
         let only = ProcessInfo.processInfo.environment["LEDGE_GALLERY_ONLY"]
         let size: NSSize = switch only {
         case "settings": NSSize(width: 700, height: 560)
@@ -147,6 +154,112 @@ final class PreviewDelegate: NSObject, NSApplicationDelegate {
         if !window.isVisible { installTour(in: window) }
         window.makeKeyAndOrderFront(nil)
         return false
+    }
+
+    /// Renders one catalogue state and reports what it produced.
+    ///
+    /// `LEDGE_GALLERY_STATE=list` prints the catalogue instead, so the script
+    /// driving this never carries its own copy of the names — a list in two
+    /// places is a list that disagrees with itself.
+    private func renderState(named name: String) {
+        if name == "list" {
+            for state in StateGallery.states { print(state.name) }
+            NSApp.terminate(nil)
+            return
+        }
+        guard let state = StateGallery.state(named: name) else {
+            FileHandle.standardError.write(Data("unknown state: \(name)\n".utf8))
+            exit(2)
+        }
+        let mac = StateGallery.mac(named: ProcessInfo.processInfo.environment["LEDGE_GALLERY_MAC"])
+        let size = NotchLayout.panelSize(for: mac.geometry)
+
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        // The app's panel is transparent around the shape; a white window
+        // behind it would make every edge test meaningless.
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        let hosting = NSHostingView(rootView: StateGallery.view(for: state, mac: mac))
+        hosting.sizingOptions = []
+        window.contentView = hosting
+        window.setContentSize(size)
+        window.makeKeyAndOrderFront(nil)
+        self.window = window
+
+        guard let path = ProcessInfo.processInfo.environment["LEDGE_GALLERY_SHOT"] else {
+            FileHandle.standardError.write(Data("LEDGE_GALLERY_SHOT is required\n".utf8))
+            exit(2)
+        }
+        // The state's own kind, so the calendar's wider seat is reported as
+        // the calendar's rather than as the width every other card gets.
+        let probe = NotchPresentation()
+        state.apply(probe)
+        let kind = probe.selected?.kind
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            let report = Self.export(window, to: path, name: state.name, mac: mac, kind: kind)
+            print(report)
+            NSApp.terminate(nil)
+        }
+    }
+
+    /// Writes the PNG and says what it contains, as one JSON line.
+    ///
+    /// The clipping test is the reason this is not just a file write: the
+    /// panel reserves room for the tallest card plus a margin, so content
+    /// reaching the left, right or bottom edge of that panel means something
+    /// was cut off. The top edge is exempt — the shape is *meant* to be flush
+    /// with the screen's top, which is where the cutout is.
+    private static func export(
+        _ window: NSWindow, to path: String, name: String,
+        mac: StateGallery.Mac, kind: ActivityKind?
+    ) -> String {
+        guard let view = window.contentView,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+        else { return "{\"name\":\"\(name)\",\"error\":\"no view\"}" }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let data = rep.representation(using: .png, properties: [:]) else {
+            return "{\"name\":\"\(name)\",\"error\":\"no png\"}"
+        }
+        do {
+            try data.write(to: URL(fileURLWithPath: path))
+        } catch {
+            return "{\"name\":\"\(name)\",\"error\":\"write failed\"}"
+        }
+        let clipped = clippedEdges(of: rep)
+        let edges = clipped.map { "\"\($0)\"" }.joined(separator: ",")
+        let geometry = mac.geometry
+        return """
+            {"name":"\(name)","mac":"\(mac.rawValue)",\
+            "scale":\(geometry.displayScale),\
+            "notch":"\(Int(geometry.notchSize.width))x\(Int(geometry.notchSize.height))",\
+            "kind":"\(kind?.rawValue ?? "none")",\
+            "cardWidth":\(NotchLayout.cardWidth(kind: kind, geometry: geometry)),\
+            "width":\(rep.pixelsWide),"height":\(rep.pixelsHigh),\
+            "clipped":[\(edges)]}
+            """
+    }
+
+    /// Which edges of the export have something drawn on them.
+    private static func clippedEdges(of rep: NSBitmapImageRep) -> [String] {
+        let width = rep.pixelsWide, height = rep.pixelsHigh
+        guard width > 2, height > 2 else { return ["degenerate"] }
+
+        func inked(_ x: Int, _ y: Int) -> Bool {
+            // Anything meaningfully opaque. The shape's own edges are
+            // antialiased, so a hair of alpha is not content.
+            (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.35
+        }
+
+        var edges: [String] = []
+        if (0..<width).contains(where: { inked($0, height - 1) }) { edges.append("bottom") }
+        if (0..<height).contains(where: { inked(0, $0) }) { edges.append("left") }
+        if (0..<height).contains(where: { inked(width - 1, $0) }) { edges.append("right") }
+        return edges
     }
 
     private static func snapshot(_ window: NSWindow, to path: String) {
@@ -276,7 +389,7 @@ struct GalleryView: View {
                         cutoutWidth: cutoutWidth,
                         inset: 10
                     )
-                    .frame(width: 348, height: 34)
+                    .frame(width: PreviewFixtures.cardWidth, height: 34)
                 }
             }
             card {
@@ -285,7 +398,7 @@ struct GalleryView: View {
                     cutoutWidth: cutoutWidth,
                     inset: 10
                 )
-                .frame(width: 348, height: 34)
+                .frame(width: PreviewFixtures.cardWidth, height: 34)
             }
         }
     }
@@ -334,7 +447,7 @@ struct GalleryView: View {
             card {
                 BottomGap(height: NotchLayout.expandedContentSize(
                     kind: .weather, phase: .expanded,
-                    base: CGSize(width: 348, height: 0)
+                    base: CGSize(width: PreviewFixtures.cardWidth, height: 0)
                 ).height) {
                     WeatherCardView(payload: Self.staleWeather)
                 }
@@ -342,7 +455,7 @@ struct GalleryView: View {
             card {
                 BottomGap(height: NotchLayout.expandedContentSize(
                     kind: .weather, phase: .expanded,
-                    base: CGSize(width: 348, height: 0),
+                    base: CGSize(width: PreviewFixtures.cardWidth, height: 0),
                     payload: .weather(Self.rainWeather)
                 ).height) {
                     WeatherCardView(payload: Self.rainWeather)
@@ -351,7 +464,7 @@ struct GalleryView: View {
             card {
                 BottomGap(height: NotchLayout.expandedContentSize(
                     kind: .levels, phase: .expanded,
-                    base: CGSize(width: 348, height: 0)
+                    base: CGSize(width: PreviewFixtures.cardWidth, height: 0)
                 ).height) {
                     LevelsCardView(actions: LevelsActions(
                         outputs: { [AudioOutputOption(
@@ -397,7 +510,7 @@ struct GalleryView: View {
                         ]
                     })
                 )
-                .frame(width: 348, height: 164)
+                .frame(width: PreviewFixtures.cardWidth, height: 164)
                 .border(.red.opacity(0.6))
             }
         }
@@ -408,7 +521,7 @@ struct GalleryView: View {
     @ViewBuilder
     private var weatherSection: some View {
         section("Weather states") {
-            card { WeatherCardView(payload: Self.staleWeather).frame(width: 348, height: 186) }
+            card { WeatherCardView(payload: Self.staleWeather).frame(width: PreviewFixtures.cardWidth, height: 186) }
             // Rain due, in the shape the overlay actually gives it: the
             // 32pt cutout reserved at the top and the page dots sitting over
             // the bottom. Rendered at the old height and the new one, so the
@@ -418,7 +531,7 @@ struct GalleryView: View {
             card { Self.rainInShape(height: Self.rainCardHeight) }
             card { Self.inShape(Self.staleWeather, height: 186) }
             // Fresh reading: no freshness line expected.
-            card { WeatherCardView(payload: Self.freshWeather).frame(width: 348, height: 90) }
+            card { WeatherCardView(payload: Self.freshWeather).frame(width: PreviewFixtures.cardWidth, height: 90) }
         }
     }
 
@@ -466,7 +579,7 @@ struct GalleryView: View {
     private static func inShape(_ payload: WeatherPayload, height: CGFloat) -> some View {
         WeatherCardView(payload: payload)
             .padding(.top, 32)
-            .frame(width: 348, height: height, alignment: .top)
+            .frame(width: PreviewFixtures.cardWidth, height: height, alignment: .top)
             .overlay(alignment: .bottom) {
                 PageDots(count: 3, selectedIndex: 1).padding(.bottom, 7)
             }
@@ -476,7 +589,7 @@ struct GalleryView: View {
     private static let rainCardHeight = NotchLayout.expandedContentSize(
         kind: .weather,
         phase: .expanded,
-        base: CGSize(width: 348, height: 0),
+        base: CGSize(width: PreviewFixtures.cardWidth, height: 0),
         payload: .weather(rainWeather)
     ).height
 
@@ -504,7 +617,7 @@ struct GalleryView: View {
                     section("Empty card") {
                         card {
                             EmptyHintsView(onStartTimer: {})
-                                .frame(width: 348)
+                                .frame(width: PreviewFixtures.cardWidth)
                                 .padding(.vertical, 12)
                         }
                     }
@@ -524,7 +637,7 @@ struct GalleryView: View {
                                     cutoutWidth: cutoutWidth,
                                     inset: 10
                                 )
-                                .frame(width: 348, height: 34)
+                                .frame(width: PreviewFixtures.cardWidth, height: 34)
                             }
                         }
                     }
@@ -543,7 +656,7 @@ struct GalleryView: View {
                                     isCurrent: true, isBuiltIn: true, level: 0.8
                                 )] }
                             ))
-                            .frame(width: 348)
+                            .frame(width: PreviewFixtures.cardWidth)
                         }
                     }
                 } else if only == "eyes" {
@@ -556,51 +669,71 @@ struct GalleryView: View {
                     section("Timer states") {
                         card {
                             TimerCardView(payload: PreviewFixtures.payload(of: PreviewFixtures.timerIdle))
-                                .frame(width: 348)
+                                .frame(width: PreviewFixtures.cardWidth)
                         }
+                        // The ready card at duo width: the number and the one
+                        // button, with no room for the recent lengths.
                         card {
                             TimerCardView(
                                 payload: PreviewFixtures.payload(of: PreviewFixtures.timerIdle),
-                                startsDialling: true
+                                isCompactWidth: true
                             )
-                            .frame(width: 348)
+                            .frame(width: 190)
+                        }
+                        // Shut and open, at one digit, two and three. The
+                        // control keeps its width and its place across all six
+                        // — it is dragged, and a control that resizes under the
+                        // hand dragging it is the bug this slot exists to
+                        // catch — and the number stays over the marker.
+                        ForEach([5, 45, 180], id: \.self) { minutes in
+                            card {
+                                TimerCardView(payload: PreviewFixtures.timerIdlePayload(minutes: minutes))
+                                    .frame(width: PreviewFixtures.cardWidth)
+                            }
+                            card {
+                                TimerCardView(
+                                    payload: PreviewFixtures.timerIdlePayload(minutes: minutes),
+                                    startsRulerOpen: true
+                                )
+                                .frame(width: PreviewFixtures.cardWidth)
+                            }
                         }
                         // Paused and finished are states nobody can click their
                         // way to on demand, so the gallery holds them.
                         card {
                             TimerCardView(payload: PreviewFixtures.payload(of: PreviewFixtures.timerFinished))
-                                .frame(width: 348)
+                                .frame(width: PreviewFixtures.cardWidth)
                         }
                         card {
                             TimerCardView(
                                 payload: PreviewFixtures.payload(of: PreviewFixtures.timerIdle),
                                 startsOnFace: .focus
                             )
-                            .frame(width: 348)
+                            .frame(width: PreviewFixtures.cardWidth)
                         }
                         card {
                             TimerCardView(payload: PreviewFixtures.payload(of: PreviewFixtures.timer))
-                                .frame(width: 348)
+                                .frame(width: PreviewFixtures.cardWidth)
                         }
                         card {
                             TimerCardView(payload: PreviewFixtures.payload(of: PreviewFixtures.timerBreak))
-                                .frame(width: 348)
+                                .frame(width: PreviewFixtures.cardWidth)
                         }
                         card {
                             TimerCardView(payload: PreviewFixtures.payload(of: PreviewFixtures.timerCustom))
-                                .frame(width: 348)
+                                .frame(width: PreviewFixtures.cardWidth)
                         }
                         card {
                             TimerCardView(payload: PreviewFixtures.payload(of: PreviewFixtures.stopwatchRunning))
-                                .frame(width: 348)
+                                .frame(width: PreviewFixtures.cardWidth)
                         }
                         card {
                             TimerCardView(payload: PreviewFixtures.payload(of: PreviewFixtures.stopwatchStopped))
-                                .frame(width: 348)
+                                .frame(width: PreviewFixtures.cardWidth)
                         }
                         card {
                             TimerCardView(payload: PreviewFixtures.payload(of: PreviewFixtures.timerIdleRecents))
-                                .frame(width: 348)
+                                .frame(width: PreviewFixtures.cardWidth)
                         }
                     }
                 } else if only == "media" {
@@ -614,7 +747,7 @@ struct GalleryView: View {
                 section("Calendar") {
                     card {
                         CalendarExpandedView(payload: PreviewFixtures.eventPayload)
-                            .frame(width: 348)
+                            .frame(width: PreviewFixtures.calendarCardWidth)
                     }
                     // Day 6 has four events, so this also shows the overflow
                     // line the three-row cap produces.
@@ -623,14 +756,14 @@ struct GalleryView: View {
                             payload: PreviewFixtures.eventPayload,
                             selectedDay: 6
                         )
-                        .frame(width: 348)
+                        .frame(width: PreviewFixtures.calendarCardWidth)
                     }
                     card {
                         CalendarExpandedView(
                             payload: PreviewFixtures.eventPayload,
                             selectedDay: 13
                         )
-                        .frame(width: 348)
+                        .frame(width: PreviewFixtures.cardWidth)
                     }
                 }
 
@@ -643,7 +776,7 @@ struct GalleryView: View {
                             // layout the app doesn't show.
                             if case .event(let payload) = activity.payload {
                                 CalendarExpandedView(payload: payload)
-                                    .frame(width: 348)
+                                    .frame(width: PreviewFixtures.cardWidth)
                             } else {
                                 ActivityCardView(activity: activity)
                             }
@@ -719,6 +852,30 @@ struct GalleryView: View {
 /// real content.
 enum PreviewFixtures {
 
+    /// The Mac the section gallery is pretending to be: the reference one,
+    /// always.
+    ///
+    /// Deliberately not scaled. Production lays a card out in reference units
+    /// and then applies `scaleEffect(displayScale)` to the whole thing, so a
+    /// bare card drawn at a *scaled* width is a layout no Mac performs — wider
+    /// in the same type. Scale belongs to the state gallery, which renders
+    /// through the production container and gets the scaling with it.
+    static let galleryGeometry = NotchGeometry(
+        screenSize: CGSize(width: 1470, height: 956),
+        notchSize: CGSize(width: 179, height: 32),
+        notchCenterX: 735,
+        isHardwareNotch: true
+    )
+
+    /// What an open card is actually this wide in the app — asked of the same
+    /// function the shell asks, rather than a literal that drifted to 348 and
+    /// made every review 16% too generous.
+    static let cardWidth = NotchLayout.cardWidth(kind: nil, geometry: galleryGeometry)
+
+    /// The calendar keeps its own fixed seat.
+    static let calendarCardWidth = NotchLayout.cardWidth(kind: .event, geometry: galleryGeometry)
+
+
     static let nowPlaying = Activity(
         id: ActivityID(kind: .nowPlaying, source: "preview"),
         createdAt: 0,
@@ -745,6 +902,24 @@ enum PreviewFixtures {
         accent: AccentColor(red: 0.85, green: 0.36, blue: 0.28),
         // An app's card, so the gallery exercises the doorway behind it.
         ownerIsApp: true
+    )
+
+    /// The longest thing a card ever carries: a title that cannot fit at any
+    /// width, so the row either marquees it or pushes its neighbours out.
+    static let longTitleNowPlaying = Activity(
+        id: ActivityID(kind: .nowPlaying, source: "preview.long"),
+        createdAt: 0,
+        payload: .nowPlaying(NowPlayingPayload(
+            title: "Everything In Its Right Place (Live at the Royal Albert Hall, Remastered)",
+            artist: "An Artist With A Considerably Longer Name Than Usual",
+            album: "Preview Album",
+            isPlaying: true,
+            elapsed: 74,
+            duration: 208,
+            sourceName: "Preview Player",
+            accent: AccentColor(red: 0.85, green: 0.36, blue: 0.28),
+            ownerIsApp: true
+        ))
     )
 
     static let device = Activity(
@@ -1029,6 +1204,19 @@ enum PreviewFixtures {
         ))
     )
 
+    /// The ready card at a given length, for checking that the number stays
+    /// over the ruler's marker as it grows: one digit, two, three.
+    static func timerIdlePayload(minutes: Int) -> TimerPayload {
+        TimerPayload(
+            label: "Timer",
+            remaining: TimeInterval(minutes * 60),
+            total: TimeInterval(minutes * 60),
+            isRunning: false,
+            isIdle: true,
+            recents: [minutes]
+        )
+    }
+
     /// The timer payload out of a fixture, for the section that renders the
     /// card directly.
     static func payload(of activity: Activity) -> TimerPayload {
@@ -1131,7 +1319,7 @@ struct BottomGap<Content: View>: View {
             Color.clear.frame(height: 32)
             content
         }
-        .frame(width: 348, height: height, alignment: .top)
+        .frame(width: PreviewFixtures.cardWidth, height: height, alignment: .top)
         .border(.red.opacity(0.6))
         .overlay(alignment: .bottom) {
             PageDots(count: 3, selectedIndex: 1).padding(.bottom, 7)
@@ -1151,7 +1339,7 @@ struct TimerSized: View {
             Color.clear.frame(height: 32)          // the cutout allowance
             TimerCardView(payload: payload, onContentHeight: { content = $0 })
         }
-        .frame(width: 348, height: height, alignment: .top)
+        .frame(width: PreviewFixtures.cardWidth, height: height, alignment: .top)
         .border(.red.opacity(0.6))
         .overlay(alignment: .bottom) {
             PageDots(count: 3, selectedIndex: 1).padding(.bottom, 7)
