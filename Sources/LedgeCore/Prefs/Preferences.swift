@@ -20,7 +20,14 @@ public enum Prefs {
     /// Width of each compact ear, which also sets every open card's width
     /// under the one-width discipline. Draft-edited in Settings and applied
     /// with a button — never live-dragged, since it rebuilds the silhouette.
-    public static let earWidth = PrefKey<CGFloat>("appearance.earWidth", default: 53)
+    ///
+    /// Its default is `NotchLayout.defaultEarWidth`, not a number written here
+    /// as well: the two were independent copies of 53, and narrowing the
+    /// layout's left every untouched install still asking the preference for
+    /// the old one — an app that measured 301pt while every export said 283.
+    public static let earWidth = PrefKey<CGFloat>(
+        "appearance.earWidth", default: NotchLayout.defaultEarWidth
+    )
     /// Horizontal nudge for the leading ear's symbol, in points. Positive
     /// moves it toward the cutout. Draft-edited on the Compact pane.
     public static let earLeadingOffset = PrefKey<CGFloat>("appearance.earLeadingOffset", default: 0)

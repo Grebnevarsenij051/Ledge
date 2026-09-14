@@ -299,5 +299,265 @@ struct BottomRoomTests {
         #expect(floor(.levels) > NotchLayout.dotsBand * 2)
         #expect(floor(.weather) > NotchLayout.dotsBand * 2)
     }
+
+    // MARK: - Width
+
+    private func geometry(scale: CGFloat) -> NotchGeometry {
+        NotchGeometry(
+            screenSize: CGSize(width: 1470, height: 956),
+            notchSize: CGSize(width: 179, height: 32),
+            notchCenterX: 735,
+            isHardwareNotch: true,
+            displayScale: scale
+        )
+    }
+
+    @Test("A card is the island's width plus the growth, and nothing per-card")
+    func widthIsOneRule() {
+        let ears: CGFloat = 44
+        let width = NotchLayout.cardWidth(kind: nil, geometry: geometry(scale: 1), earWidth: ears)
+        #expect(width == 179 + ears * 2 + NotchLayout.openCardGrowth)
+        for kind in [ActivityKind.nowPlaying, .weather, .timer, .power] {
+            #expect(NotchLayout.cardWidth(kind: kind, geometry: geometry(scale: 1), earWidth: ears)
+                == width)
+        }
+    }
+
+    /// Only the part the app chose scales. The cutout is hardware and already
+    /// differs between Macs; scaling it again would count that difference
+    /// twice.
+    @Test("A bigger panel widens the ears, not the cutout")
+    func widthScalesOnlyWhatWeChose() {
+        let small = NotchLayout.cardWidth(kind: nil, geometry: geometry(scale: 1), earWidth: 44)
+        let large = NotchLayout.cardWidth(kind: nil, geometry: geometry(scale: 1.2), earWidth: 44)
+        #expect(large > small)
+        #expect(abs((large - 179) - (small - 179) * 1.2) < 0.001, "binary floating point")
+    }
+
+    @Test("The calendar keeps its own seat when the island is narrower")
+    func calendarHasItsOwnWidth() {
+        let ears = NotchLayout.defaultEarWidth
+        // Seven columns beside a day column do not compress below this.
+        #expect(NotchLayout.cardWidth(kind: .event, geometry: geometry(scale: 1), earWidth: ears)
+            == NotchLayout.calendarWidth)
+        #expect(NotchLayout.cardWidth(kind: .event, geometry: geometry(scale: 1.2), earWidth: ears)
+            == NotchLayout.calendarWidth * 1.2)
+        #expect(NotchLayout.cardWidth(kind: .event, geometry: geometry(scale: 1), earWidth: ears)
+            > NotchLayout.cardWidth(kind: nil, geometry: geometry(scale: 1), earWidth: ears),
+            "at the default ears the calendar is the wider one")
+    }
+
+    /// A floor, not a fixed width: wide ears carry every other card past the
+    /// calendar's own number, and a calendar sitting 70pt narrower than its
+    /// neighbours makes every swipe onto it a visible step inward.
+    @Test("Wide ears carry the calendar with them")
+    func calendarFollowsWideEars() {
+        let generic = NotchLayout.cardWidth(kind: nil, geometry: geometry(scale: 1), earWidth: 90)
+        #expect(generic > NotchLayout.calendarWidth)
+        #expect(NotchLayout.cardWidth(kind: .event, geometry: geometry(scale: 1), earWidth: 90)
+            == generic)
+    }
+
+    // MARK: - The ends of the width preference
+
+    /// The ears are a preference with a range, and both ends of it have to
+    /// produce a card somebody can use: narrow enough to be worth setting,
+    /// wide enough not to swallow the screen.
+    @Test("Both ends of the ear preference give a sane card")
+    func earPreferenceBounds() {
+        let reference = geometry(scale: 1)
+
+        let narrowest = NotchLayout.cardWidth(kind: nil, geometry: reference, earWidth: 36)
+        #expect(narrowest == 179 + 36 * 2 + NotchLayout.openCardGrowth)
+        #expect(narrowest > reference.notchSize.width, "a card is never narrower than its cutout")
+
+        let widest = NotchLayout.cardWidth(kind: nil, geometry: reference, earWidth: 90)
+        #expect(widest == 179 + 90 * 2 + NotchLayout.openCardGrowth)
+        #expect(widest < reference.screenSize.width / 2, "and never half the screen")
+    }
+
+    /// A hand-edited or corrupted defaults database is the source here, and
+    /// NaN slips through `min`/`max` intact — the stdlib returns its first
+    /// argument when a comparison fails.
+    @Test("Nonsense in the preference cannot reach the card")
+    func earPreferenceIsSanitized() {
+        #expect(NotchLayout.sanitizedEarWidth(.nan) == NotchLayout.defaultEarWidth)
+        #expect(NotchLayout.sanitizedEarWidth(.infinity) == NotchLayout.defaultEarWidth,
+            "not finite, so not a width — the clamp would happily return it")
+        #expect(NotchLayout.sanitizedEarWidth(4_000) == 90)
+        #expect(NotchLayout.sanitizedEarWidth(-10) == 36)
+        #expect(NotchLayout.sanitizedEarWidth(44) == 44)
+
+        let reference = geometry(scale: 1)
+        #expect(NotchLayout.cardWidth(kind: nil, geometry: reference, earWidth: 4_000)
+            == 179 + 90 * 2 + NotchLayout.openCardGrowth, "clamped, not obeyed")
+        #expect(NotchLayout.cardWidth(kind: nil, geometry: reference, earWidth: .nan)
+            == NotchLayout.cardWidth(kind: nil, geometry: reference,
+                                     earWidth: NotchLayout.defaultEarWidth))
+    }
+
+    /// The narrowing that prompted all of this took every card from 301 to
+    /// 283, and no font size moved.
+    @Test("The default ears put the reference card at 275")
+    func defaultWidthAtReference() {
+        #expect(NotchLayout.defaultEarWidth == 48)
+        let width = NotchLayout.cardWidth(
+            kind: nil, geometry: geometry(scale: 1), earWidth: NotchLayout.defaultEarWidth
+        )
+        #expect(width == 275)
+    }
+
+    /// What the ears give up when they narrow comes off the gap beside the
+    /// cutout, not off the outer margin — the content is centred, so half of
+    /// any narrowing would otherwise be taken from the wrong side.
+    @Test("A narrowing is owed to the inner gap")
+    func narrowingComesFromTheInside() {
+        let nudge = max(0, (NotchLayout.referenceEarWidth - NotchLayout.defaultEarWidth) / 2)
+        #expect(nudge == 2, "half of the four points each ear lost")
+        #expect(NotchLayout.referenceEarWidth == 52)
+        // Nobody at or above the reference width is moved at all.
+        #expect(max(0, (NotchLayout.referenceEarWidth - 52) / 2) == 0)
+        #expect(max(0, (NotchLayout.referenceEarWidth - 90) / 2) == 0)
+    }
+
+    /// One shape, two states of it. The card used to sit 16pt wider than the
+    /// island it grew out of, which read as two shapes rather than one opening.
+    @Test("The island and the card are the same width")
+    func islandMatchesTheCard() {
+        #expect(NotchLayout.openCardGrowth == 0)
+        let reference = geometry(scale: 1)
+        let island = reference.notchSize.width + NotchLayout.defaultEarWidth * 2
+        #expect(island == 275)
+        #expect(NotchLayout.cardWidth(kind: nil, geometry: reference,
+                                      earWidth: NotchLayout.defaultEarWidth) == island)
+    }
+
+    /// And the same at any ear width and any Mac, since both are the same
+    /// expression now.
+    @Test("They stay equal wherever the preference is set")
+    func islandTracksTheCard() {
+        for ears in [CGFloat(36), 44, 52, 70, 90] {
+            for scale in [CGFloat(1.0), 1.18] {
+                let geo = geometry(scale: scale)
+                let island = geo.notchSize.width + ears * 2 * scale
+                #expect(abs(NotchLayout.cardWidth(kind: nil, geometry: geo, earWidth: ears)
+                    - island) < 0.001)
+            }
+        }
+    }
+
+    /// A display with no cutout has no hardware to be narrow for, and its
+    /// stand-in is 53pt narrower than a real one — which was dragging every
+    /// card down with it.
+    @Test("A card on a display with no cutout has a floor")
+    func syntheticDisplayFloor() {
+        let synthetic = NotchGeometry.simulated(screenSize: CGSize(width: 1920, height: 1080))
+        #expect(!synthetic.isHardwareNotch)
+        #expect(NotchLayout.cardWidth(kind: nil, geometry: synthetic,
+                                      earWidth: NotchLayout.defaultEarWidth)
+            == NotchLayout.syntheticMinimumWidth)
+    }
+
+    @Test("Wide ears carry a cutout-less card past its floor")
+    func syntheticFloorYieldsToWideEars() {
+        let synthetic = NotchGeometry.simulated(screenSize: CGSize(width: 1920, height: 1080))
+        #expect(NotchLayout.cardWidth(kind: nil, geometry: synthetic, earWidth: 90)
+            == 126 + 90 * 2 + NotchLayout.openCardGrowth)
+    }
+
+    /// The floor is the cards' alone: the compact island is the shape sitting
+    /// beside a cutout, and it follows the preference wherever it is drawn.
+    @Test("The floor does not reach a real Mac's card")
+    func floorIsForSyntheticOnly() {
+        let real = geometry(scale: 1)
+        let narrow = NotchLayout.cardWidth(kind: nil, geometry: real, earWidth: 36)
+        #expect(narrow == 179 + 36 * 2 + NotchLayout.openCardGrowth)
+        #expect(narrow < NotchLayout.syntheticMinimumWidth, "a narrow preference stays narrow")
+    }
+
+    /// Production lays a card out in reference units and scales the result, so
+    /// what the *content* gets is the card width divided by the scale — and a
+    /// bigger notch eats into it, rather than the content growing to match.
+    @Test("Content is laid out in reference units, scale applied after")
+    func contentUnitsAreReference() {
+        let big = NotchGeometry(
+            screenSize: CGSize(width: 1470, height: 956),
+            notchSize: CGSize(width: 200, height: 38),
+            notchCenterX: 735, isHardwareNotch: true, displayScale: 1.18
+        )
+        let ears = NotchLayout.defaultEarWidth
+        let layoutWidth = NotchLayout.cardWidth(kind: nil, geometry: big, earWidth: ears)
+            / big.displayScale
+        #expect(layoutWidth
+            < NotchLayout.cardWidth(kind: nil, geometry: geometry(scale: 1), earWidth: ears))
+        #expect(layoutWidth > 250, "but never so tight that the content has nowhere to go")
+    }
+
+    /// The width the whole card is sized to must be the width this function
+    /// says — they were the same expression written twice, and the preview
+    /// gallery quietly used a third number.
+    @Test("Card sizing asks the same question")
+    func sizingAgreesWithTheRule() {
+        for kind in [ActivityKind.nowPlaying, .event] {
+            let size = NotchLayout.cardSize(
+                kind: kind, phase: .expanded, base: CGSize(width: 0, height: 140),
+                geometry: geometry(scale: 1.2), routePickerRows: 0, hasSelection: true,
+                earWidth: 44
+            )
+            #expect(size.width
+                == NotchLayout.cardWidth(kind: kind, geometry: geometry(scale: 1.2), earWidth: 44))
+        }
+    }
+
+    // MARK: - The simple cards size to their content
+
+    /// A Focus card is a 46pt circle and two lines. It used to take the height
+    /// *preference* as a floor like every other card, which is how 66pt of
+    /// content came out 170pt tall with ninety points of black under it.
+    @Test("A simple card is its content, the cutout, and the dots")
+    func simpleCardFollowsItsContent() {
+        let height = NotchLayout.simpleCardHeight(66)
+        #expect(height == NotchLayout.referenceNotchHeight + 66 + NotchLayout.dotsBand)
+        #expect(NotchLayout.simpleCardHeight(120) > height, "taller content, taller card")
+    }
+
+    @Test("Before the card has measured itself, the old fixed height stands")
+    func simpleCardBeforeMeasurement() {
+        #expect(NotchLayout.simpleCardHeight(0) == 132)
+        #expect(NotchLayout.simpleCardHeight(.nan) == 132)
+        #expect(NotchLayout.simpleCardHeight(-40) == 132)
+    }
+
+    @Test("It cannot collapse to nothing, nor run away")
+    func simpleCardIsBounded() {
+        #expect(NotchLayout.simpleCardHeight(1) == 96)
+        #expect(NotchLayout.simpleCardHeight(10_000) == 220)
+    }
+
+    /// A taller cutout moves the whole budget with it, exactly as the Clock
+    /// card's own height does.
+    @Test("A taller cutout moves it")
+    func simpleCardFollowsTheCutout() {
+        #expect(NotchLayout.simpleCardHeight(66, notchHeight: 38)
+            == 38 + 66 + NotchLayout.dotsBand)
+        #expect(abs(NotchLayout.simpleCardHeight(0, notchHeight: 38)
+            - (132 + (38 - NotchLayout.referenceNotchHeight))) < 0.001)
+    }
+
+    /// The preference still sets the cards where a taller one buys something,
+    /// and no longer sets the ones where it only bought a hole.
+    @Test("The height preference no longer floors a simple card")
+    func preferenceDoesNotFloorSimpleCards() {
+        let tallPreference = CGSize(width: 0, height: 300)
+        let focus = NotchLayout.expandedContentSize(
+            kind: .focus, phase: .expanded, base: tallPreference, cardContentHeight: 66
+        )
+        #expect(focus.height == NotchLayout.referenceNotchHeight + 66 + NotchLayout.dotsBand,
+            "its content, not the slider")
+        let media = NotchLayout.expandedContentSize(
+            kind: .nowPlaying, phase: .expanded, base: tallPreference
+        )
+        #expect(media.height == 300, "still the slider's to set")
+    }
 }
 

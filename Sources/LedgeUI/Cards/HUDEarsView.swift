@@ -39,6 +39,23 @@ public struct HUDEarsView: View {
         }
     }
 
+    /// One point further from the ear's outer edge, for the bar alone.
+    ///
+    /// The glyph and the bar are mirrored about the cutout and share an
+    /// offset, which is right for keeping them balanced and wrong for this:
+    /// the bar reads a point too close to the shape's trailing edge, and
+    /// moving the pair would take the glyph with it. By the owner's eye, and
+    /// only the bar moves — the island keeps its width.
+    static let barNudge: CGFloat = 1
+
+    /// The same inward nudge the companion ears take, and for the same reason:
+    /// a narrower ear centres its content in less room, which would eat half
+    /// the outer margin. All of a narrowing comes off the gap beside the
+    /// cutout instead. See `NotchLayout.referenceEarWidth`.
+    static var inwardNudge: CGFloat {
+        max(0, (NotchLayout.referenceEarWidth - NotchLayout.hudEarWidth) / 2)
+    }
+
     public var body: some View {
         HStack(spacing: 0) {
             // A positive offset moves both toward the cutout: the glyph right,
@@ -46,8 +63,8 @@ public struct HUDEarsView: View {
             // Clamped: the stored offset is only slider-bounded, and NaN or a
             // huge value in a transform draws the content off-screen or not at
             // all.
-            let safeOffset = contentOffset.isFinite
-                ? min(max(contentOffset, -60), 60) : 0
+            let safeOffset = (contentOffset.isFinite
+                ? min(max(contentOffset, -60), 60) : 0) + Self.inwardNudge
             leading
                 .frame(maxWidth: .infinity, alignment: .center)
                 .offset(x: safeOffset)
@@ -56,7 +73,7 @@ public struct HUDEarsView: View {
 
             trailing
                 .frame(maxWidth: .infinity, alignment: .center)
-                .offset(x: -safeOffset)
+                .offset(x: -(safeOffset + Self.barNudge))
         }
         // Only a small safety margin off the rounded corners. A large outer
         // padding would shove the glyph and bar toward the cutout; keeping it

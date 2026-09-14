@@ -120,7 +120,32 @@ public struct NotchLayout: Sendable, Equatable {
     /// User-adjustable through Settings (draft + Apply, never live), clamped
     /// so the ears can neither vanish nor swallow the screen. Written only
     /// from the main thread — the shell applies it at start and on Apply.
-    public static let defaultEarWidth: CGFloat = 53
+    /// Fifty-two, down from 53 — and the number that now sets both shapes.
+    ///
+    /// The narrowing that got here took every card from 301pt to 283 by taking
+    /// nine points off each ear, which is 6% of horizontal air and not a point
+    /// of type or control. The island came with it, to 267.
+    ///
+    /// Then the island was asked to match the cards rather than sit 16pt
+    /// inside them, so `openCardGrowth` went to zero and the ears took back
+    /// the difference: 52 each side puts the island at 283 — exactly the card
+    /// — and leaves the card where it was. The island is within 2pt of where
+    /// it started; the cards keep the whole narrowing.
+    ///
+    /// Still a preference, still 36...90: anybody who has set their own keeps
+    /// it, and this moves only what an untouched install starts at.
+    public static let defaultEarWidth: CGFloat = 48
+
+    /// The ear width the compact content's outer margin was drawn against.
+    ///
+    /// The ears are centred content in a box, so narrowing the box moves the
+    /// glyph inward by *half* what the ear lost and takes the other half off
+    /// the outer margin. That is the one thing the owner did not want: the cut
+    /// comes out of the middle, with both sides sliding toward the cutout and
+    /// their outer margins untouched. `CompactEarsView` reads this and nudges
+    /// its content inward by the difference, so the margin holds at any ear
+    /// width below it.
+    public static let referenceEarWidth: CGFloat = 52
     public nonisolated(unsafe) private(set) static var peekEarWidth: CGFloat = defaultEarWidth
     public nonisolated(unsafe) private(set) static var hudEarWidth: CGFloat = defaultEarWidth
 
@@ -132,7 +157,15 @@ public struct NotchLayout: Sendable, Equatable {
         hudEarWidth = sane
     }
 
-    private static func sanitizedEarWidth(_ width: CGFloat) -> CGFloat {
+    /// What an ear width is allowed to be: never so narrow the content cannot
+    /// sit in it, never so wide it swallows the screen, and never NaN — which
+    /// a hand-edited or corrupted defaults database can supply, and which
+    /// slips through `min`/`max` intact.
+    ///
+    /// Public because it is the rule, and a rule that can only be exercised by
+    /// mutating a global is a rule two tests running at once will disagree
+    /// about.
+    public static func sanitizedEarWidth(_ width: CGFloat) -> CGFloat {
         width.isFinite ? min(max(width, 36), 90) : defaultEarWidth
     }
 
@@ -219,6 +252,11 @@ public struct NotchLayout: Sendable, Equatable {
     /// than anything it holds, so the two halves read as pushed apart rather
     /// than sat beside each other. The grid did not lose room — the column
     /// gave it up.
+    ///
+    /// Now a *minimum* rather than a fixed width. It is the one card that does
+    /// not follow the island down: 22pt of padding either side, a seven-column
+    /// grid and a day column beside it, all of which were tuned at this number
+    /// and none of which has anywhere left to give.
     public static let calendarWidth: CGFloat = 300
 
     /// One week's row in the month grid.
@@ -322,6 +360,25 @@ public struct NotchLayout: Sendable, Equatable {
         return min(max(notchHeight + contentHeight + dotsBand, 140 + delta), 280 + delta)
     }
 
+    /// What a simple card is worth: its own content, plus room for the page
+    /// dots beneath it.
+    ///
+    /// - Parameter contentHeight: what the card reported, or zero before it
+    ///   has — then the old fixed height stands, which is tall enough for any
+    ///   of them and so cannot clip while waiting.
+    /// Counted the way `timerHeight` counts: the cutout the content sits
+    /// under, the content itself, and the page dots' own band beneath it.
+    /// Leaving the cutout out of it is how the first attempt put the dots
+    /// through the middle of the second line of text.
+    public static func simpleCardHeight(
+        _ contentHeight: CGFloat,
+        notchHeight: CGFloat = referenceNotchHeight
+    ) -> CGFloat {
+        let delta = notchHeight - referenceNotchHeight
+        guard contentHeight > 0, contentHeight.isFinite else { return 132 + delta }
+        return min(max(notchHeight + contentHeight + dotsBand, 96 + delta), 220 + delta)
+    }
+
     /// A month is four, five or six rows deep, and the card was sized for the
     /// deepest of them — so most months carried a band of empty black under
     /// the grid. It now follows the month on show.
@@ -337,9 +394,68 @@ public struct NotchLayout: Sendable, Equatable {
         return calendarChrome(notchHeight: notchHeight) + CGFloat(rows) * calendarRowHeight
     }
 
-    /// How much wider an open card sits than the compact island — the small
-    /// outward breath that makes opening read as a transition.
-    public static let openCardGrowth: CGFloat = 16
+    /// The narrowest an open card gets on a display with no cutout.
+    ///
+    /// The reference Mac's card, which is what every card was drawn against.
+    /// Not derived from `defaultEarWidth`: a floor that moves when somebody
+    /// drags a slider is not a floor.
+    public static let syntheticMinimumWidth: CGFloat = 283
+
+    /// How much wider an open card sits than the compact island.
+    ///
+    /// Zero, by the owner's decision: the card and the island are the same
+    /// width, so opening grows the shape downward and only downward. It was 16
+    /// — a small outward breath that made opening read as a transition — but a
+    /// card that is 16pt wider than the island it came out of also reads as
+    /// two different shapes, and the owner wanted one.
+    ///
+    /// Kept as a named constant rather than deleted: it is the difference
+    /// between the two widths, and a difference of zero is worth being able to
+    /// see in one place.
+    public static let openCardGrowth: CGFloat = 0
+
+    /// How wide an open card is on this Mac.
+    ///
+    /// One width discipline, not per-card floors: every card opens at the
+    /// compact island's width plus a small fixed growth, and the calendar alone
+    /// gets its fixed wider seat. The cutout's own width is hardware and
+    /// already differs between Macs, so only the part this app chose — the ears
+    /// and the growth — scales.
+    ///
+    /// Separate from `cardSize` so the preview gallery can be honest: it used
+    /// to draw every card at a literal 348, which is neither this Mac's width
+    /// nor any other's, so what was reviewed was never quite what shipped.
+    /// - Parameter earWidth: the ears this card hangs from. Defaults to the
+    ///   applied preference, which is what every caller in the app wants; a
+    ///   test passes its own instead, so asking what a 90pt ear would produce
+    ///   does not mean *setting* one on a global that another test is reading
+    ///   at the same moment.
+    public static func cardWidth(
+        kind: ActivityKind?,
+        geometry: NotchGeometry,
+        earWidth: CGFloat? = nil
+    ) -> CGFloat {
+        let ears = earWidth.map(sanitizedEarWidth) ?? hudEarWidth
+        var island = geometry.notchSize.width
+            + (ears * 2 + Self.openCardGrowth) * geometry.displayScale
+        // A display with no cutout has no hardware to be narrow *for*. Its
+        // stand-in cutout is 126pt against a real one's 179, which was dragging
+        // every card down with it — the Clock header came out reading
+        // "Stopw…" there long before the ears were narrowed. The compact
+        // island still follows the preference; only the open card gets a
+        // floor, and only where the thing it is sized against is imaginary.
+        if !geometry.isHardwareNotch {
+            island = max(island, Self.syntheticMinimumWidth * geometry.displayScale)
+        }
+        // The calendar's floor, not its width. Seven columns beside a day
+        // column do not compress below `calendarWidth`, so it keeps that much
+        // whatever the ears are set to — but when the ears are wide enough to
+        // carry every other card past it, it comes along rather than sitting
+        // 70pt narrower than its neighbours and making every swipe onto it a
+        // visible step inward.
+        guard kind == .event else { return island }
+        return max(island, Self.calendarWidth * geometry.displayScale)
+    }
 
     public static func cardSize(
         kind: ActivityKind?,
@@ -348,14 +464,20 @@ public struct NotchLayout: Sendable, Equatable {
         payload: ActivityPayload? = nil,
         calendarWeekRows: Int = 0,
         timerContentHeight: CGFloat = 0,
+        cardContentHeight: CGFloat = 0,
         geometry: NotchGeometry,
         routePickerRows: Int,
-        hasSelection: Bool
+        hasSelection: Bool,
+        /// The ears this card hangs from; the applied preference by default.
+        /// Passed explicitly by tests so asking what another width would
+        /// produce never means writing to a global another test is reading.
+        earWidth: CGFloat? = nil
     ) -> CGSize {
         var content = expandedContentSize(
             kind: kind, phase: phase, base: base,
             payload: payload, calendarWeekRows: calendarWeekRows,
             timerContentHeight: timerContentHeight,
+            cardContentHeight: cardContentHeight,
             notchHeight: geometry.notchSize.height
         )
         // Two corrections, both about the Mac this is running on rather than
@@ -381,9 +503,7 @@ public struct NotchLayout: Sendable, Equatable {
         // The cutout's own width is hardware and already differs between Macs,
         // so only the part this app chose — the ears and the growth — scales,
         // rather than scaling a number that has grown once already.
-        content.width = kind == .event
-            ? Self.calendarWidth * scale
-            : geometry.notchSize.width + (hudEarWidth * 2 + Self.openCardGrowth) * scale
+        content.width = cardWidth(kind: kind, geometry: geometry, earWidth: earWidth)
 
         // The route menu is sized to its rows exactly rather than floored at the
         // player's height, so one destination gives a short card instead of a
@@ -596,6 +716,7 @@ public struct NotchLayout: Sendable, Equatable {
         payload: ActivityPayload? = nil,
         calendarWeekRows: Int = 0,
         timerContentHeight: CGFloat = 0,
+        cardContentHeight: CGFloat = 0,
         notchHeight: CGFloat = referenceNotchHeight
     ) -> CGSize {
         switch kind {
@@ -605,12 +726,19 @@ public struct NotchLayout: Sendable, Equatable {
             // is kept narrower (iOS-Island-like) but the height keeps its full
             // padding so the transport row is not cramped against the edge.
             return CGSize(width: base.width, height: max(base.height, 164))
-        case .device, .focus:
-            // The device card carries product artwork and up to three battery
-            // cells; the Focus card a 46pt circle. Both need a touch more than
-            // the base row height, and the same width as the other cards so the
-            // silhouette does not jump between them.
-            return CGSize(width: base.width, height: max(base.height, 132))
+        case .device, .focus, .privacy, .keyboard, .power, .message, .shelf:
+            // The simple cards: a glyph and a line or two, sometimes a row of
+            // cells. They used to take the *height preference* as a floor like
+            // everything else, which is how a Focus card that needs 66pt came
+            // out 170 — ninety points of black under two lines of text.
+            //
+            // They measure themselves instead, exactly as the Clock card does.
+            // The preference still sets the media and weather cards, which is
+            // where a taller card buys something; here it only bought a hole.
+            return CGSize(
+                width: base.width,
+                height: simpleCardHeight(cardContentHeight, notchHeight: notchHeight)
+            )
         case .weather:
             // Same width as the media card so the two flagship cards present one
             // silhouette, and tall enough for the header plus the hourly strip —
@@ -654,10 +782,10 @@ public struct NotchLayout: Sendable, Equatable {
                 ))
             )
         default:
-            // Everything else (shelf, power, message, privacy, keyboard) still
-            // needs *some* room below the cutout: the height preference's legal
-            // minimum equals the notch height, which left these kinds a 0pt
-            // content area — an expanded card that drew nothing.
+            // Anything without a card of its own still needs *some* room below
+            // the cutout: the height preference's legal minimum equals the
+            // notch height, which left these kinds a 0pt content area — an
+            // expanded card that drew nothing.
             return CGSize(width: base.width, height: max(base.height, 120))
         }
     }

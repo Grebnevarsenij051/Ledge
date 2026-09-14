@@ -91,39 +91,51 @@ struct LayoutNaNTests {
 }
 
 
-/// The adjustable ear width: clamped, NaN-proof, and restored after each
-/// check so the shared static cannot bleed into other suites.
+/// The adjustable ear width.
+///
+/// The clamp is tested through `sanitizedEarWidth` and the discipline through
+/// an explicit `earWidth:`, so neither writes to the shared static. One test
+/// still does — `setEarWidth` has to be exercised somewhere — and it is the
+/// only writer left in the suite, restoring the default before it returns.
+/// This matters because tests run in parallel: while the old version held the
+/// static at 90, a width test in another suite read it and saw a 375pt card
+/// where it expected 283.
 @Suite("Ear width", .serialized)
 struct EarWidthTests {
 
-    @Test("Set, clamp, and degrade")
-    func setAndClamp() {
+    @Test("Clamped, capped, and NaN-proof")
+    func clampRule() {
+        #expect(NotchLayout.sanitizedEarWidth(70) == 70)
+        #expect(NotchLayout.sanitizedEarWidth(10) == 36, "floored")
+        #expect(NotchLayout.sanitizedEarWidth(500) == 90, "capped")
+        #expect(NotchLayout.sanitizedEarWidth(.nan) == NotchLayout.defaultEarWidth, "NaN degrades")
+    }
+
+    /// The one writer. Both compact phases share a width, so setting it must
+    /// reach both statics rather than the one the caller happened to mean.
+    @Test("Applying a width reaches both compact phases")
+    func appliesToBothPhases() {
         defer { NotchLayout.setEarWidth(NotchLayout.defaultEarWidth) }
         NotchLayout.setEarWidth(70)
         #expect(NotchLayout.hudEarWidth == 70)
         #expect(NotchLayout.peekEarWidth == 70)
-        NotchLayout.setEarWidth(10)
-        #expect(NotchLayout.hudEarWidth == 36, "floored")
         NotchLayout.setEarWidth(500)
-        #expect(NotchLayout.hudEarWidth == 90, "capped")
-        NotchLayout.setEarWidth(.nan)
-        #expect(NotchLayout.hudEarWidth == NotchLayout.defaultEarWidth, "NaN degrades")
+        #expect(NotchLayout.hudEarWidth == 90, "sanitised on the way in")
     }
 
     @Test("The width discipline follows the ear width")
     func disciplineFollows() {
-        defer { NotchLayout.setEarWidth(NotchLayout.defaultEarWidth) }
         let geometry = NotchGeometry(
             screenSize: CGSize(width: 1470, height: 956),
             notchSize: CGSize(width: 180, height: 32),
             notchCenterX: 735,
             isHardwareNotch: true
         )
-        NotchLayout.setEarWidth(60)
         let size = NotchLayout.cardSize(
             kind: .nowPlaying, phase: .hover,
             base: CGSize(width: 420, height: 160),
-            geometry: geometry, routePickerRows: 0, hasSelection: true
+            geometry: geometry, routePickerRows: 0, hasSelection: true,
+            earWidth: 60
         )
         #expect(abs(size.width - (300 + NotchLayout.openCardGrowth)) < 0.001)
     }

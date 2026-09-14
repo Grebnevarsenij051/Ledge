@@ -455,7 +455,8 @@ private struct IslandDemo: View {
     @State private var levels: [Double] = []
 
     private static let cutout = CGSize(width: 180, height: 32)
-    private static let earWidth: CGFloat = 53
+    /// The tour's own little island, drawn at whatever the app's ears are.
+    private static let earWidth = NotchLayout.defaultEarWidth
     private static let gutter: CGFloat = 10
 
     var body: some View {

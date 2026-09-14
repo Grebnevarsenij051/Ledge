@@ -39,6 +39,19 @@ public struct CompactEarsView: View {
         self.trailingOffset = trailingOffset.isFinite ? min(max(trailingOffset, -24), 24) : 0
     }
 
+    /// How far the content sits toward the cutout, beyond wherever the user's
+    /// own nudge puts it.
+    ///
+    /// A narrower ear centres its content in less room, which moves the glyph
+    /// inward by half the loss and eats the other half of the outer margin.
+    /// This gives that half back: the whole of a narrowing comes out of the
+    /// gap beside the cutout, and the distance from the shape's outer edge to
+    /// the glyph is the same at 48 as it was at 52. Zero for anybody whose
+    /// ears are at or above the reference width.
+    private var inwardNudge: CGFloat {
+        max(0, (NotchLayout.referenceEarWidth - NotchLayout.hudEarWidth) / 2)
+    }
+
     public var body: some View {
         // The ears divide whatever is left either side of the cutout, rather
         // than taking a fixed width that knows nothing about the gutters.
@@ -53,7 +66,7 @@ public struct CompactEarsView: View {
                     .transition(Motion.earSwap(reduced: reduceMotion))
             }
             .frame(maxWidth: .infinity, alignment: .center)
-            .offset(x: leadingOffset)
+            .offset(x: leadingOffset + inwardNudge)
 
             // Reserved space for the physical cutout. Nothing may draw here.
             Color.clear.frame(width: cutoutWidth)
@@ -64,7 +77,7 @@ public struct CompactEarsView: View {
                     .transition(Motion.earSwap(reduced: reduceMotion))
             }
             .frame(maxWidth: .infinity, alignment: .center)
-            .offset(x: -trailingOffset)
+            .offset(x: -(trailingOffset + inwardNudge))
         }
         .padding(.horizontal, inset)
         // Driven by identity: a now-playing card republishes every second, and
@@ -130,7 +143,21 @@ public struct CompactEarsView: View {
             // Album art in the ear, so the resting companion reads as "music",
             // not a generic note glyph.
             NowPlayingThumbnail(payload: payload, accent: accent)
-                .frame(width: 22, height: 22)
+                // Twenty, and two and a half points nearer the outer edge.
+                //
+                // Centred content in a 48pt ear puts a 22pt tile 15pt from the
+                // shape's edge, which reads heavier than the rhythm glyph
+                // opposite it. A smaller tile alone would only move it further
+                // in — a centred thing gains half of whatever it gives up on
+                // each side — so the offset pays that back and a point more.
+                // Only the tile: the ear's other tenants are their own size in
+                // their own place.
+                //
+                // The half point is a whole pixel on a Retina panel, and it is
+                // what puts the tile at 13.5 from the edge — the same distance
+                // the rhythm glyph keeps on the other side.
+                .frame(width: 20, height: 20)
+                .offset(x: -2.5)
         } else if case .device = activity.payload, symbolName.contains("airpods") {
             // Apple's own AirPods artwork — the official SF Symbol for the exact
             // model — drawn large with a soft top-lit gradient, the way the

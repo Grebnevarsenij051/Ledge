@@ -82,4 +82,15 @@ struct PreferencesTests {
             #expect(!store.hasValue(named: name), "\(name)")
         }
     }
+
+    /// The layout constant and the preference default were two independent
+    /// copies of the same number, and narrowing one left every untouched
+    /// install still asking for the other — an app that drew 301pt while every
+    /// export said 283.
+    @Test("The ear width preference defaults to the layout's own number")
+    func earWidthDefaultIsTheLayoutConstant() {
+        #expect(Prefs.earWidth.defaultValue == NotchLayout.defaultEarWidth)
+        let preferences = Preferences(store: MemoryPreferenceStore())
+        #expect(preferences.earWidth == NotchLayout.defaultEarWidth)
+    }
 }
