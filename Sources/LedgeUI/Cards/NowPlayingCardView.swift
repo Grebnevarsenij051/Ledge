@@ -2,7 +2,7 @@ import LedgeCore
 import SwiftUI
 
 /// One route the audio can go to, for the output picker.
-public struct AudioOutputOption: Identifiable, Equatable {
+public struct AudioOutputOption: Identifiable, Equatable, Sendable {
     public let id: UInt32
     public let name: String
     public let isCurrent: Bool
@@ -120,6 +120,13 @@ public struct NowPlayingCardView: View {
     /// While a drag is in progress the bar follows the finger rather than the
     /// player, otherwise the next poll would yank the handle back mid-gesture.
     @State private var scrubFraction: Double?
+    /// The song the scrub began on, so a seek cannot land on its successor.
+    @State private var scrubbingTrack: String?
+
+    /// Which song is on, for the purpose of "is this still the same one".
+    /// Title and artist rather than the artwork key: a track with no cover has
+    /// no key, and two songs from one album share theirs.
+    private var songKey: String { "\(payload.title)\u{1F}\(payload.artist)" }
     @State private var clearTask: Task<Void, Never>?
 
     /// Optimistic favourite state: the button reflects the tap immediately, and
@@ -130,7 +137,14 @@ public struct NowPlayingCardView: View {
     /// player obeyed — the gap that made the transport feel dead and provoked a
     /// second, cancelling tap. Cleared the moment the payload's real state
     /// changes, so a command the player ignored self-corrects.
-    @State private var playingOverride: Bool?
+    /// What the transport button was just asked to do, shown before the player
+    /// has said whether it happened. The rule lives in `PlaybackIntent`, where
+    /// the deadline can be tested without waiting for it.
+    @State private var intent = PlaybackIntent()
+    /// Redraws the button when the intent's deadline passes: the rule is
+    /// clockless, so something has to come back and look.
+    @State private var overrideExpiry: Task<Void, Never>?
+    @State private var intentTick = 0
 
     /// Bumped on each next/previous press, with the direction pressed, so the
     /// artwork knows which way to turn when the track change lands. The flip
@@ -200,7 +214,32 @@ public struct NowPlayingCardView: View {
     }
 
     private var displayedFraction: Double { scrubFraction ?? payload.progress }
-    private var isPlayingDisplayed: Bool { playingOverride ?? payload.isPlaying }
+    private var isPlayingDisplayed: Bool {
+        // `intentTick` is read so the deadline's wake-up redraws this.
+        _ = intentTick
+        return intent.displayed(reported: payload.isPlaying, at: Self.now())
+    }
+
+    private static func now() -> TimeInterval { Date().timeIntervalSinceReferenceDate }
+
+    /// Shows what was asked for, and comes back when the deadline passes so
+    /// the player's own state can take over.
+    private func setOptimistically(_ playing: Bool) {
+        intent.ask(for: playing, at: Self.now())
+        overrideExpiry?.cancel()
+        overrideExpiry = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(PlaybackIntent.grace))
+            guard !Task.isCancelled else { return }
+            intentTick &+= 1
+        }
+    }
+
+    /// The player answered, or the card went away.
+    private func clearOverride() {
+        overrideExpiry?.cancel()
+        overrideExpiry = nil
+        intent.reported()
+    }
 
     public var body: some View {
         if isCompactWidth {
@@ -230,7 +269,7 @@ public struct NowPlayingCardView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .onChange(of: payload.isPlaying) { _, _ in playingOverride = nil }
+        .onChange(of: payload.isPlaying) { _, _ in clearOverride() }
     }
 
     // MARK: - Full
@@ -320,7 +359,7 @@ public struct NowPlayingCardView: View {
                 // is the *player*, not the track, so it does not reset on its
                 // own.
                 .onChange(of: payload.artworkKey ?? "\(payload.title)|\(payload.artist)") { _, _ in
-                    playingOverride = nil
+                    clearOverride()
                 }
 
                 Spacer(minLength: 8)
@@ -362,7 +401,7 @@ public struct NowPlayingCardView: View {
             }
         }
         // Real state landed (or reverted) — drop the optimistic guess.
-        .onChange(of: payload.isPlaying) { _, _ in playingOverride = nil }
+        .onChange(of: payload.isPlaying) { _, _ in clearOverride() }
     }
 
 
@@ -423,10 +462,26 @@ public struct NowPlayingCardView: View {
                             guard proxy.size.width > 0 else { return }
                             clearTask?.cancel()
                             clearTask = nil
+                            // The same latch the volume rows take: without it
+                            // the card could close under a pointer that
+                            // wandered off the shape mid-scrub, and the seek
+                            // never arrived.
+                            if scrubbingTrack == nil {
+                                scrubbingTrack = songKey
+                                actions.setDragging(true)
+                            }
                             scrubFraction = min(max(value.location.x / proxy.size.width, 0), 1)
                         }
                         .onEnded { _ in
-                            if let fraction = scrubFraction { actions.seek(fraction) }
+                            // Only if it is still the song that was grabbed. A
+                            // track ending mid-drag would otherwise seek the
+                            // one that replaced it to wherever the pointer
+                            // happened to be.
+                            if let fraction = scrubFraction, scrubbingTrack == songKey {
+                                actions.seek(fraction)
+                            }
+                            scrubbingTrack = nil
+                            actions.setDragging(false)
                             clearTask?.cancel()
                             clearTask = Task { @MainActor in
                                 try? await Task.sleep(for: .milliseconds(600))
@@ -486,7 +541,7 @@ public struct NowPlayingCardView: View {
             .accessibilityLabel("Previous track")
             Spacer(minLength: 0)
             glyph(isPlayingDisplayed ? "pause.fill" : "play.fill", size: 17) {
-                playingOverride = !isPlayingDisplayed
+                setOptimistically(!isPlayingDisplayed)
                 actions.playPause()
             }
             .accessibilityLabel(isPlayingDisplayed ? "Pause" : "Play")
@@ -586,7 +641,31 @@ public struct NowPlayingCardView: View {
         .onChange(of: routeOptions.count) { _, count in
             actions.setRoutePickerRows(max(count, 1))
         }
+        // The list was a snapshot taken when it opened, so anything that
+        // happened elsewhere — volume changed from the keyboard or another
+        // app, the route switched in Control Centre, headphones plugged in or
+        // pulled out — left it showing what used to be true for as long as it
+        // stayed open. It re-reads while it is on screen, and only while it is
+        // on screen.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.routeRefreshInterval)
+                guard !Task.isCancelled else { return }
+                // Not mid-drag: the dragged level is the truth until the
+                // pointer lifts, and the device is still catching up to it.
+                guard draggedLevels.isEmpty else { continue }
+                let fresh = actions.outputs()
+                if fresh != routeOptions { routeOptions = fresh }
+            }
+        }
     }
+
+    /// How often an open output list re-reads the devices.
+    ///
+    /// A second: fast enough that plugging in headphones while looking at the
+    /// list is seen as it happens, slow enough to be nothing next to the
+    /// polling the card already does for the track itself.
+    private static let routeRefreshInterval: Duration = .seconds(1)
 
     private var header: some View {
         HStack(spacing: 10) {
@@ -648,6 +727,11 @@ public struct NowPlayingCardView: View {
             // — the number was real and the sound was not.
             let reported = option.isMuted ? 0 : (option.level ?? 0)
             let shown = min(max(draggedLevels[option.id] ?? reported, 0), 1)
+            // A device that exposes no volume — many HDMI displays, some USB
+            // interfaces — was drawn as a slider sitting at zero, which reads
+            // as an output turned all the way down rather than one whose level
+            // is not ours to set. It is a plain row instead.
+            let isAdjustable = option.level != nil
 
             ZStack(alignment: .leading) {
                 Capsule(style: .continuous)
@@ -655,9 +739,11 @@ public struct NowPlayingCardView: View {
 
                 // The level, in the same track-and-fill language the level HUD
                 // uses, drawn as the row's own fill.
-                Capsule(style: .continuous)
-                    .fill(.white.opacity(option.isCurrent ? 0.26 : 0.14))
-                    .frame(width: width * shown)
+                if isAdjustable {
+                    Capsule(style: .continuous)
+                        .fill(.white.opacity(option.isCurrent ? 0.26 : 0.14))
+                        .frame(width: width * shown)
+                }
 
                 HStack(spacing: 11) {
                     Image(systemName: Self.outputSymbol(for: option.name))
@@ -691,6 +777,7 @@ public struct NowPlayingCardView: View {
                         // a click would silently zero an output you only
                         // discover is dead much later — which is exactly the
                         // failure that is hard to attribute back to this app.
+                        guard isAdjustable else { return }
                         guard abs(value.translation.width) > Self.dragThreshold else { return }
                         // Latch first: the shell must know a drag is in flight
                         // before the pointer can wander off the shape mid-slide.
@@ -706,8 +793,19 @@ public struct NowPlayingCardView: View {
                         // used to both set the level and switch the route.
                         let dragged = draggedLevels[option.id] != nil
                         if !dragged && abs(value.translation.width) <= Self.dragThreshold {
-                            actions.selectOutput(option.id)
-                            // Re-snapshot so the tick moves to the new route.
+                            if option.isCurrent && isAdjustable {
+                                // The output you are listening to sets its
+                                // level where you click, the way the Levels
+                                // card does. Selecting it again is a no-op, so
+                                // a click on this row had no effect at all
+                                // unless it happened to travel far enough to
+                                // count as a drag.
+                                let next = min(max(value.location.x / width, 0), 1)
+                                actions.setOutputVolume(option.id, next)
+                            } else {
+                                actions.selectOutput(option.id)
+                            }
+                            // Re-snapshot so the tick and the level catch up.
                             routeOptions = actions.outputs()
                         }
                         if dragged {
@@ -1006,8 +1104,21 @@ struct NowPlayingArtwork: View {
 
         // Reduce Motion: the face changes, the card stays flat.
         guard !reduceMotion else {
-            shownImage = latestImage ?? shownImage
             shownKey = key
+            if let arrived = latestImage {
+                shownImage = arrived
+                return
+            }
+            // No cover yet. The old one holds for the same grace the turn
+            // would have spent edge-on — long enough for one that is on its
+            // way, short enough that a song without a cover of its own does
+            // not wear the last song's for as long as it plays.
+            graceTask?.cancel()
+            graceTask = Task { @MainActor in
+                try? await Task.sleep(for: Self.edgeOnGrace)
+                guard !Task.isCancelled, shownKey == key, latestKey == key else { return }
+                shownImage = latestImage
+            }
             return
         }
         isFlipping = true
@@ -1036,9 +1147,12 @@ struct NowPlayingArtwork: View {
                     }
                 }
             }
-            // Still nothing: the old art rides through, and `artworkArrived`
-            // updates the face in place when it finally lands.
-            shownImage = face ?? shownImage
+            // Still nothing after the grace. The old art may not ride
+            // through: a song with no cover of its own would wear the
+            // previous song's for as long as it played, which is a quiet lie
+            // about what is on. The placeholder says "no cover" instead, and
+            // `artworkArrived` still fills it in if one turns up late.
+            shownImage = face
             shownKey = key
             angle = -out
             withAnimation(.easeOut(duration: 0.18)) { angle = 0 }
