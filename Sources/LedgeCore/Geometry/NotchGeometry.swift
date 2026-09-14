@@ -112,6 +112,17 @@ public struct NotchLayout: Sendable, Equatable {
         )
     }
 
+    /// The ears at the size this Mac draws them.
+    ///
+    /// The compact phases used the raw preference while the cards multiplied
+    /// it by the display scale, so on a 16-inch the island came out 296pt
+    /// against a 313pt card — the two shapes the owner had just asked to be
+    /// the same width. They are one expression now, and the island grows with
+    /// the panel exactly as the card it opens into does.
+    public static func earWidth(for geometry: NotchGeometry, _ width: CGFloat? = nil) -> CGFloat {
+        (width.map(sanitizedEarWidth) ?? hudEarWidth) * geometry.displayScale
+    }
+
     /// Width of the content area either side of the cutout in the compact
     /// phases. Content lives in these "ears"; the cutout itself stays empty
     /// because there is physical hardware behind it.
@@ -202,7 +213,8 @@ public struct NotchLayout: Sendable, Equatable {
         expanded(
             geometry,
             size: CGSize(
-                width: geometry.notchSize.width + (earWidth.map(sanitizedEarWidth) ?? peekEarWidth) * 2,
+                width: geometry.notchSize.width
+                    + (earWidth.map(sanitizedEarWidth) ?? peekEarWidth) * 2 * geometry.displayScale,
                 height: geometry.notchSize.height + compactExtraHeight
                     + (announcing ? announceExtraHeight(for: geometry) : 0)
             ),
@@ -222,7 +234,7 @@ public struct NotchLayout: Sendable, Equatable {
         expanded(
             geometry,
             size: CGSize(
-                width: geometry.notchSize.width + hudEarWidth * 2,
+                width: geometry.notchSize.width + Self.earWidth(for: geometry) * 2,
                 height: geometry.notchSize.height + compactExtraHeight
             ),
             bottomRadius: bottomRadius,
@@ -400,6 +412,40 @@ public struct NotchLayout: Sendable, Equatable {
     /// Not derived from `defaultEarWidth`: a floor that moves when somebody
     /// drags a slider is not a floor.
     public static let syntheticMinimumWidth: CGFloat = 283
+
+    /// Where the detached satellite sits, in the island's own coordinates:
+    /// x from the island's leading edge, y from its top.
+    ///
+    /// One rectangle, asked for by everything that cares: the view that draws
+    /// the circle, the panel that decides where the pointer counts as inside,
+    /// and the routing that decides which card a click belongs to. They used
+    /// to work it out separately — the drawing from a seat computed inline,
+    /// the hit testing from the island's bounding box, which does not contain
+    /// the satellite at all — so a satellite pushed out by the offset
+    /// preference was drawn where nothing answered the pointer.
+    ///
+    /// - Parameters:
+    ///   - islandSize: the compact shape's own bounding size.
+    ///   - offset: the user's nudge, in points, positive away from the cutout.
+    public static func satelliteRect(
+        islandSize: CGSize,
+        geometry: NotchGeometry,
+        gutterRadius: CGFloat,
+        offset: CGFloat
+    ) -> CGRect {
+        let diameter = geometry.notchSize.height + 1
+        let gutter = gutterRadius.isFinite ? max(0, gutterRadius) : 0
+        // The island pulls its trailing ear in while the satellite is out, so
+        // the seat is measured from where that edge actually lands.
+        let seat = islandSize.width - (gutter + earWidth(for: geometry))
+            + (offset.isFinite ? min(max(offset, -60), 200) : 5)
+        return CGRect(
+            x: seat,
+            y: (islandSize.height - diameter) / 2,
+            width: diameter,
+            height: diameter
+        )
+    }
 
     /// How much wider an open card sits than the compact island.
     ///
@@ -646,7 +692,8 @@ public struct NotchLayout: Sendable, Equatable {
             return expanded(
                 geometry,
                 size: CGSize(
-                    width: geometry.notchSize.width + (hudEarWidth + hudAdjustExtraWidth) * 2,
+                    width: geometry.notchSize.width
+                        + (Self.earWidth(for: geometry) + hudAdjustExtraWidth) * 2,
                     height: geometry.notchSize.height + compactExtraHeight + hudAdjustHeight
                         + max(0, hudExtraHeight.isFinite ? hudExtraHeight : 0)
                 ),

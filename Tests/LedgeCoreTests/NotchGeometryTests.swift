@@ -151,15 +151,20 @@ struct LayoutBoundaryTests {
         )
     }
 
+    /// The drafted width is in reference points, and this Mac's scale applies
+    /// to it exactly as it applies to a card: the island and the card it opens
+    /// into are one width, so the ear cannot be the one thing that ignores the
+    /// panel.
     @Test("Draft compact ears retain their usable width after gutter insets", arguments: [CGFloat(36), 53, 90])
     func compactPreviewWidth(ear: CGFloat) {
-        let geometry = geometry(scale: 1.2)
+        let scale: CGFloat = 1.2
+        let geometry = geometry(scale: scale)
         for gutter: CGFloat in [0, 10, 30] {
             let layout = NotchLayout.peek(
                 geometry, bottomRadius: 14, gutterRadius: gutter, earWidth: ear
             )
             let usableEar = (layout.boundingSize.width - geometry.notchSize.width) / 2 - gutter
-            #expect(abs(usableEar - ear) < 0.001)
+            #expect(abs(usableEar - ear * scale) < 0.001)
             #expect(layout.boundingSize.height == geometry.notchSize.height + 0.5)
         }
     }
