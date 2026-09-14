@@ -120,9 +120,67 @@ public final class NotchPresentation {
     /// a deeper month has to make the card deeper with it.
     public var calendarWeekRows: Int = 0
 
+    /// A fixed clock, for the gallery only — nil everywhere in the app.
+    ///
+    /// Two things on these cards are read off the wall clock: the calendar's
+    /// "today", and the timer's "Ends at 10:36". Both would make an exported
+    /// image differ from yesterday's for no reason anyone could act on, which
+    /// is the difference between a diff worth reading and one nobody reads.
+    @ObservationIgnored public var fixedNow: Date?
+
     /// How tall the Clock card's content is. Reported by the card, because
     /// which of its three faces is showing is the card's own state.
     public var timerContentHeight: CGFloat = 0
+
+    /// What each simple card measured itself at, remembered by card.
+    ///
+    /// Not a single "last reported" value, which two separate failures made
+    /// untenable:
+    ///
+    /// - A measurement kept from the previous card *sizes* the next one. The
+    ///   Shelf inherited the Focus card's 66pt and lost 22pt of its tiles.
+    /// - A card that comes back is often the *same view*, reused, with the
+    ///   same geometry — so it never reports again. Forgetting the old value
+    ///   on every switch left the Shelf on the fallback height for as long as
+    ///   it was on screen, which is the same clip by a different route.
+    ///
+    /// Remembering per card answers both: a report is filed under the card
+    /// that made it and can never be spent on another, and a card that returns
+    /// is already known.
+    private var cardContentHeights: [ActivityID: CGFloat] = [:]
+
+    /// How many cards' measurements to keep.
+    ///
+    /// A card's identity carries its source, so a machine that has seen many
+    /// Bluetooth devices has many ids. Twelve is more than the queue ever
+    /// holds at once and small enough that nothing accumulates.
+    private static let rememberedMeasurements = 12
+
+    /// A card measuring itself. Filed under that card, whichever card is on
+    /// show by the time it arrives.
+    public func reportCardContent(height: CGFloat, from id: ActivityID) {
+        guard height > 0, height.isFinite else { return }
+        if cardContentHeights[id] == height { return }
+        if cardContentHeights.count >= Self.rememberedMeasurements,
+           cardContentHeights[id] == nil {
+            // Whichever is not on screen. Cheap and rare: this only runs on a
+            // machine that has cycled through a dozen distinct cards.
+            if let stale = cardContentHeights.keys.first(where: { $0 != selected?.id }) {
+                cardContentHeights.removeValue(forKey: stale)
+            }
+        }
+        cardContentHeights[id] = height
+    }
+
+    /// What this card measured, or zero if it never has — which is when the
+    /// fixed height stands in, and that one is tall enough for any of them.
+    public func cardContentHeight(for id: ActivityID?) -> CGFloat {
+        guard let id else { return 0 }
+        return cardContentHeights[id] ?? 0
+    }
+
+    /// Whose measurement is being used right now. For tests and diagnostics.
+    public var measuredCards: Set<ActivityID> { Set(cardContentHeights.keys) }
 
     public init() {}
 }
@@ -773,7 +831,7 @@ public struct NotchOverlayView: View {
                     // behind a click. A one-line row with a tinted icon says
                     // less than the grid does and looks like every other row;
                     // the grid is the thing worth opening the notch for.
-                    CalendarExpandedView(payload: payload) { rows in
+                    CalendarExpandedView(payload: payload, now: presentation.fixedNow) { rows in
                         presentation.calendarWeekRows = rows
                     }
                         // A stable identity: there is only ever one calendar
@@ -801,8 +859,12 @@ public struct NotchOverlayView: View {
                         // Only the full-width card measures itself; the duo
                         // cards are sized by the split, not by their content.
                         onTimerHeight: { presentation.timerContentHeight = $0 },
+                        onContentHeight: { id, height in
+                            presentation.reportCardContent(height: height, from: id)
+                        },
                         swapResponse: preferences.springResponse,
-                        swapDamping: preferences.springDamping
+                        swapDamping: preferences.springDamping,
+                        now: presentation.fixedNow
                     )
                         // Without an explicit identity the card's identity is
                         // positional, so cycling to a *different* activity

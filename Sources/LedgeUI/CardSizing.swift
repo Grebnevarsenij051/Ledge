@@ -47,6 +47,10 @@ extension NotchPresentation {
             payload: selected?.payload,
             calendarWeekRows: calendarWeekRows,
             timerContentHeight: timerContentHeight,
+            // This card's own measurement, or none. A card that has never
+            // measured itself gets the fixed height, which is tall enough for
+            // any of them and so can only be too generous.
+            cardContentHeight: cardContentHeight(for: selected?.id),
             geometry: geometry,
             routePickerRows: routePickerRows,
             hasSelection: selected != nil

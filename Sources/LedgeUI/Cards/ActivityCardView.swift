@@ -16,6 +16,8 @@ public struct ActivityCardView: View {
 
     private let activity: Activity
     private let isCompactWidth: Bool
+    private let fixedNow: Date?
+    private let onContentHeight: (ActivityID, CGFloat) -> Void
     private let nowPlayingActions: NowPlayingActions
     private let timerActions: TimerActions
     private let shelfActions: ShelfActions
@@ -41,11 +43,20 @@ public struct ActivityCardView: View {
         levelsActions: LevelsActions = LevelsActions(),
         liveLevel: HUDReadout? = nil,
         onTimerHeight: @escaping (CGFloat) -> Void = { _ in },
+        /// How tall this card's content actually is, for the kinds that have
+        /// no business being as tall as the height preference. The timer
+        /// reports its own through `onTimerHeight`; this is the same idea for
+        /// the simple ones.
+        onContentHeight: @escaping (ActivityID, CGFloat) -> Void = { _, _ in },
         swapResponse: Double = 0.38,
-        swapDamping: Double = 0.68
+        swapDamping: Double = 0.68,
+        /// The gallery's fixed clock; nil in the app. See `NotchPresentation`.
+        now: Date? = nil
     ) {
         self.activity = activity
         self.isCompactWidth = isCompactWidth
+        self.fixedNow = now
+        self.onContentHeight = onContentHeight
         self.nowPlayingActions = nowPlayingActions
         self.timerActions = timerActions
         self.shelfActions = shelfActions
@@ -73,21 +84,25 @@ public struct ActivityCardView: View {
                 payload: payload,
                 onContentHeight: onTimerHeight,
                 actions: timerActions,
-                isCompactWidth: isCompactWidth
+                isCompactWidth: isCompactWidth,
+                now: fixedNow
             )
         case .levels:
             LevelsCardView(actions: levelsActions, isCompactWidth: isCompactWidth, liveLevel: liveLevel)
         case .shelf(let payload):
             ShelfCardView(payload: payload, actions: shelfActions, isCompactWidth: isCompactWidth)
+                .measuredContent(activity.id, onContentHeight)
         case .device(let payload) where !isCompactWidth:
             // Bluetooth gear gets its own card for the same reason weather does:
             // the generic row buries the product and its battery cells.
             DeviceCardView(payload: payload, isCompactWidth: isCompactWidth)
-                .padding(.horizontal, 15)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 10)
+                .measuredContent(activity.id, onContentHeight)
         case .focus(let payload) where !isCompactWidth:
             FocusCardView(payload: payload)
-                .padding(.horizontal, 15)
+                .measuredContent(activity.id, onContentHeight)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 10)
         case .weather(let payload) where !isCompactWidth:
             // The generic row reads as a notification *about* the weather; the
@@ -99,7 +114,7 @@ public struct ActivityCardView: View {
                 // twenty-six points from the edge — a sixth of a three-hundred
                 // point card spent on margins, which is what made this one and
                 // the two below look pinched next to the media card.
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 10)
         default:
             genericCard
@@ -130,8 +145,9 @@ public struct ActivityCardView: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
         }
-        .padding(.horizontal, 15)
+        .padding(.horizontal, 8)
         .padding(.vertical, 10)
+        .measuredContent(activity.id, onContentHeight)
     }
 
     // MARK: - Pieces
@@ -331,5 +347,27 @@ struct BatteryPill: View {
                 .monospacedDigit()
                 .foregroundStyle(level < 0.2 ? .red : .white.opacity(0.8))
         }
+    }
+}
+
+
+/// Reports a view's natural height to the shell.
+///
+/// Only for content that is *not* stretched by its parent — the simple cards
+/// are an HStack of a glyph and two lines, so their height is their content's
+/// and measuring it is safe. A card that filled the frame would measure the
+/// frame and the two would chase each other.
+/// The card's identity travels with its measurement.
+///
+/// A height reported by one card outlives it — the shell keeps the last value
+/// — and a card on its way out reports for a frame or two after its
+/// replacement has arrived. Naming the card lets the shell keep only the
+/// measurement the card on show made, and ignore everything else. See
+/// `NotchPresentation.reportCardContent(height:from:)`.
+extension View {
+    func measuredContent(
+        _ id: ActivityID, _ report: @escaping (ActivityID, CGFloat) -> Void
+    ) -> some View {
+        onGeometryChange(for: CGFloat.self) { $0.size.height } action: { report(id, $0) }
     }
 }
