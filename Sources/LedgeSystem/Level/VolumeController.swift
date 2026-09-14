@@ -397,6 +397,19 @@ public final class VolumeController {
         }
 
         Self.log.debug("watching \(self.listenerBlocks.count) volume properties")
+
+        // Read the device we have just bound to.
+        //
+        // Re-arming happens when the *default output changes* — headphones in,
+        // AirPlay picked in Control Centre — and the new device rarely sits at
+        // the old one's level. Without this the card went on showing the
+        // previous device's number until something moved that device's volume,
+        // which could be never. Writes were always correct (the write resolves
+        // the default device at the moment it happens); only the readout lied.
+        //
+        // `noteChange` coalesces and drops a reading identical to the last
+        // delivered one, so this costs nothing when the device is the same.
+        noteChange()
     }
 
     /// The default device itself changes when headphones are plugged in, at
