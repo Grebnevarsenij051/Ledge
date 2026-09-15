@@ -1,5 +1,6 @@
 import LedgeCore
 import SwiftUI
+import os
 
 /// A ruler you drag to set a timer's length.
 ///
@@ -33,6 +34,10 @@ struct DurationDialView: View {
     /// can slide continuously while the number lands on whole minutes.
     @State private var anchor: Int?
     @State private var translation: CGFloat = 0
+    /// The last few samples of the drag, for the speed at the moment of
+    /// release. Only the tail matters, so the list is trimmed as it goes.
+    @State private var samples: [(translation: CGFloat, time: TimeInterval)] = []
+    @State private var glide: Task<Void, Never>?
 
     private var position: CGFloat {
         guard let anchor else { return CGFloat(minutes) }
@@ -53,6 +58,9 @@ struct DurationDialView: View {
             .frame(width: width, height: Self.height)
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .gesture(drag)
+            // A flick that outlives its rule would go on setting a value
+            // nobody can see, and go on holding the card open to do it.
+            .onDisappear { settle() }
         }
         .frame(height: Self.height)
         .accessibilityElement()
@@ -148,29 +156,119 @@ struct DurationDialView: View {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 if anchor == nil {
+                    // A touch stops whatever the last flick was still doing,
+                    // the way catching a scroll view does.
+                    glide?.cancel()
+                    glide = nil
                     anchor = minutes
+                    samples = []
                     setDragging(true)
                 }
                 translation = value.translation.width
-                let landed = DurationDial.minutes(
-                    anchor: anchor ?? minutes,
-                    translation: translation
-                )
-                if landed != minutes {
-                    minutes = landed
-                    haptic()
-                }
+                note(translation)
+                apply(translation)
             }
-            .onEnded { _ in
-                // The value is already where the drag left it; this only puts
-                // the rule back on a whole minute and releases the latch.
-                anchor = nil
-                translation = 0
-                setDragging(false)
+            .onEnded { value in
+                // Reduce Motion asks for less travel, and a glide is travel
+                // nobody asked for by hand.
+                guard !reduceMotion else { return settle() }
+                note(value.translation.width)
+                startGlide(
+                    reported: Double(value.velocity.width),
+                    measured: RulerGlide.velocity(from: samples)
+                )
             }
     }
 
     private func nudge(by delta: Int) {
+        glide?.cancel()
+        glide = nil
         minutes = DurationDial.clamp(minutes + delta)
+    }
+
+    /// Records where the drag is, and forgets what is too old to matter.
+    private func note(_ translation: CGFloat) {
+        let now = Date().timeIntervalSinceReferenceDate
+        samples.append((translation, now))
+        samples.removeAll { now - $0.time > 0.2 }
+    }
+
+    /// Moves the value to wherever the rule now sits.
+    private func apply(_ translation: CGFloat) {
+        let landed = DurationDial.minutes(anchor: anchor ?? minutes, translation: translation)
+        guard landed != minutes else { return }
+        minutes = landed
+        haptic()
+    }
+
+    private static let log = Logger(subsystem: "com.egemert.ledge", category: "ruler")
+
+    /// Carries the rule on after the hand lifts, and settles when it stops.
+    private func startGlide(reported: Double, measured: Double) {
+        let velocity = RulerGlide.release(reported: reported, measured: measured)
+        if DebugSwitches.tracing("ruler") {
+            Self.log.notice("""
+                ruler: release reported=\(reported, privacy: .public) \
+                measured=\(measured, privacy: .public) \
+                used=\(velocity, privacy: .public) \
+                samples=\(samples.count, privacy: .public)
+                """)
+        }
+        var motion = RulerGlide(velocity: velocity)
+        guard motion.isGliding else { return settle() }
+
+        glide?.cancel()
+        glide = Task { @MainActor in
+            var last = Date().timeIntervalSinceReferenceDate
+            var travel: CGFloat = 0
+            var steps = 0
+            while !Task.isCancelled, motion.isGliding {
+                // A frame at a time. The step takes the elapsed time rather
+                // than assuming it, so a busy frame slows nothing down.
+                try? await Task.sleep(for: .milliseconds(8))
+                guard !Task.isCancelled else { break }
+                let now = Date().timeIntervalSinceReferenceDate
+                let travelled = motion.step(now - last)
+                last = now
+                travel += travelled
+                steps += 1
+
+                let before = minutes
+                translation += travelled
+                apply(translation)
+                // The range is a wall, not a spring: at either end the glide
+                // is over rather than bouncing or grinding on silently.
+                if minutes == before,
+                   minutes == DurationDial.range.lowerBound
+                    || minutes == DurationDial.range.upperBound {
+                    motion.stop()
+                }
+            }
+            guard !Task.isCancelled else {
+                if DebugSwitches.tracing("ruler") { Self.log.notice("ruler: glide cancelled") }
+                return
+            }
+            if DebugSwitches.tracing("ruler") {
+                Self.log.notice(
+                    """
+                    ruler: glide finished travel=\(travel, privacy: .public)pt \
+                    steps=\(steps, privacy: .public) \
+                    minutes=\(minutes, privacy: .public)
+                    """
+                )
+            }
+            settle()
+        }
+    }
+
+    /// The rule comes to rest: the number is already where it should be, so
+    /// this only puts the rule back on a whole minute and lets the card go.
+    private func settle() {
+        glide?.cancel()
+        glide = nil
+        anchor = nil
+        translation = 0
+        samples = []
+        setDragging(false)
     }
 }
