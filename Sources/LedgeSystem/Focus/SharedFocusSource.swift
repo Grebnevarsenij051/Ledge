@@ -29,6 +29,8 @@ public final class SharedFocusSource: FocusSource {
 
     public func current() -> FocusSnapshot? { base.current() }
 
+    public func reading() -> FocusReading { base.reading() }
+
     public func startWatching(_ onChange: @escaping () -> Void) {
         stopWatching()
         token = base.addObserver(onChange)

@@ -225,13 +225,13 @@ struct FocusFallbackTests {
     @Test("The database wins when it can be read")
     func databaseWins() {
         let mode = FocusSnapshot(identifier: "com.apple.focus.work", name: "Work", symbolName: "person.lanyardcard.fill")
-        let resolved = SystemFocusSource.resolve(fileSnapshot: mode, fileReadable: true, statusFocused: false)
+        let resolved = SystemFocusSource.resolve(file: .on(mode), statusFocused: false)
         #expect(resolved == mode, "a readable database is the better source, even against a stale cached status")
     }
 
     @Test("Without the database, the system's answer stands in — nameless but present")
     func systemAnswerStandsIn() {
-        let resolved = SystemFocusSource.resolve(fileSnapshot: nil, fileReadable: false, statusFocused: true)
+        let resolved = SystemFocusSource.resolve(file: .unintelligible, statusFocused: true)
         #expect(resolved?.name == "Focus")
         #expect(resolved?.symbolName == "moon.fill")
         #expect(resolved != nil, "the card must exist without Full Disk Access — that was the whole bug")
@@ -239,8 +239,51 @@ struct FocusFallbackTests {
 
     @Test("Nothing on, or nothing readable, is nothing shown")
     func nothingShown() {
-        #expect(SystemFocusSource.resolve(fileSnapshot: nil, fileReadable: false, statusFocused: false) == nil)
-        #expect(SystemFocusSource.resolve(fileSnapshot: nil, fileReadable: true, statusFocused: true) == nil,
+        #expect(SystemFocusSource.resolve(file: .unintelligible, statusFocused: false) == nil)
+        #expect(SystemFocusSource.resolve(file: .off, statusFocused: true) == nil,
                 "a readable database saying 'no Focus' is the truth")
+    }
+
+    /// A file we can open and cannot understand is not a file that says no.
+    ///
+    /// The schema here is private and undocumented, so a future macOS may well
+    /// change it. When it does, this source must fall silent and let the public
+    /// API answer — rather than reporting every Focus as off for as long as the
+    /// mismatch lasts, which is what an unrecognised shape used to do.
+    @Test("An unreadable shape falls back instead of claiming Focus is off")
+    func unintelligibleFallsBack() {
+        let resolved = SystemFocusSource.resolve(file: .unintelligible, statusFocused: true)
+        #expect(resolved != nil, "the public answer covers a schema this version cannot read")
+        #expect(resolved?.name == "Focus")
+    }
+
+    @Test("Parsing tells the three cases apart")
+    func parserDistinguishes() {
+        let active = Data("""
+            {"data":[{"storeAssertionRecords":[
+              {"assertionDetails":{"assertionDetailsModeIdentifier":"com.apple.focus.work"}}
+            ]}]}
+            """.utf8)
+        let none = Data("""
+            {"data":[{"storeAssertionRecords":[]}]}
+            """.utf8)
+
+        #expect(FileFocusSource.assertions(from: active) == .active("com.apple.focus.work"))
+        #expect(FileFocusSource.assertions(from: none) == .inactive, "the shape is known and empty")
+        #expect(FileFocusSource.assertions(from: Data("not json".utf8)) == .unintelligible)
+        #expect(FileFocusSource.assertions(from: Data("{}".utf8)) == .unintelligible,
+                "json, but not this file's json")
+        #expect(FileFocusSource.assertions(from: nil) == .unintelligible)
+        // A plausible next-schema shape: same file, different records key.
+        #expect(FileFocusSource.assertions(from: Data("""
+            {"data":[{"assertions":[{"mode":"com.apple.focus.work"}]}]}
+            """.utf8)) == .unintelligible, "a schema change reads as unknown, not as off")
+    }
+
+    /// And the half that must not regress: a file that genuinely says "off"
+    /// still overrides a fallback holding a Focus that has already ended.
+    @Test("A known-inactive file still beats a stale fallback")
+    func inactiveBeatsStaleFallback() {
+        #expect(SystemFocusSource.resolve(file: .off, statusFocused: true) == nil)
     }
 }

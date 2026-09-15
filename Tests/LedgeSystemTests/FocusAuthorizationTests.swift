@@ -8,7 +8,13 @@ import Testing
 private final class FocusFileStub: FocusSource {
     var isReadable = false
     var snapshot: FocusSnapshot?
+    /// Stages the file this version cannot parse.
+    var isUnintelligible = false
     func current() -> FocusSnapshot? { snapshot }
+    func reading() -> FocusReading {
+        if isUnintelligible || !isReadable { return .unintelligible }
+        return snapshot.map(FocusReading.on) ?? .off
+    }
     func startWatching(_ onChange: @escaping () -> Void) {}
     func stopWatching() {}
 }

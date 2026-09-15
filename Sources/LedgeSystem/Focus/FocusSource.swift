@@ -26,8 +26,26 @@ public protocol FocusSource: AnyObject {
     /// The active Focus, or nil when none is on.
     func current() -> FocusSnapshot?
 
+    /// What the file actually said: a mode, nothing, or a shape this version
+    /// does not know. `current()` collapses the last two into nil, which is
+    /// the right answer for drawing a card and the wrong one for deciding
+    /// whether to fall back.
+    func reading() -> FocusReading
+
     func startWatching(_ onChange: @escaping () -> Void)
     func stopWatching()
+}
+
+/// What a Focus source managed to establish.
+///
+/// Separate from `FocusSnapshot?` because "nothing is on" and "I could not
+/// understand this" are different facts with different consequences: the first
+/// is authoritative and should override a stale fallback, the second means
+/// this source knows nothing and another one should answer.
+public enum FocusReading: Equatable, Sendable {
+    case on(FocusSnapshot)
+    case off
+    case unintelligible
 }
 
 /// Reads Focus state from `~/Library/DoNotDisturb/DB`.
@@ -102,19 +120,31 @@ public final class FileFocusSource: FocusSource {
     }
 
     public func current() -> FocusSnapshot? {
+        if case .on(let snapshot) = reading() { return snapshot }
+        return nil
+    }
+
+    public func reading() -> FocusReading {
         let raw = read("Assertions.json")
-        let identifier = Self.activeModeIdentifier(from: raw)
-        Self.diag("current: bytes=\(raw?.count ?? -1) id=\(identifier ?? "nil")")
-        guard let identifier else { return nil }
+        let assertions = Self.assertions(from: raw)
+        Self.diag("current: bytes=\(raw?.count ?? -1) assertions=\(assertions)")
 
-        let configured = Self.modeDetails(from: read("ModeConfigurations.json"))[identifier]
-        let fallback = Self.builtInModes[identifier]
-
-        return FocusSnapshot(
-            identifier: identifier,
-            name: configured?.name ?? fallback?.name ?? "Focus",
-            symbolName: configured?.symbol ?? fallback?.symbol ?? "moon.fill"
-        )
+        switch assertions {
+        case .unintelligible:
+            // Readable bytes we cannot make sense of. Saying "no Focus" here
+            // would be a guess wearing the clothes of an answer.
+            return .unintelligible
+        case .inactive:
+            return .off
+        case .active(let identifier):
+            let configured = Self.modeDetails(from: read("ModeConfigurations.json"))[identifier]
+            let fallback = Self.builtInModes[identifier]
+            return .on(FocusSnapshot(
+                identifier: identifier,
+                name: configured?.name ?? fallback?.name ?? "Focus",
+                symbolName: configured?.symbol ?? fallback?.symbol ?? "moon.fill"
+            ))
+        }
     }
 
     private func read(_ file: String) -> Data? {
@@ -125,19 +155,44 @@ public final class FileFocusSource: FocusSource {
 
     /// Pulled out and nonisolated so recorded fixtures can drive them in tests.
 
-    nonisolated static func activeModeIdentifier(from data: Data?) -> String? {
+    /// What the assertions file had to say.
+    ///
+    /// Three answers, not two. "No Focus is on" and "this file is not in a
+    /// shape I know" both used to come back as nil, and the caller could only
+    /// read that as Focus-off — so a schema change in a future macOS would not
+    /// break Focus loudly, it would quietly report every Focus as off and
+    /// suppress the public fallback that would otherwise have covered it.
+    public enum Assertions: Equatable, Sendable {
+        /// Understood, and this mode is on.
+        case active(String)
+        /// Understood, and nothing is on. Authoritative: it overrides a stale
+        /// fallback saying otherwise.
+        case inactive
+        /// Not in a shape this version knows — bytes that are not JSON, or
+        /// JSON without the records this reads. Says nothing either way, so
+        /// the caller must fall back rather than conclude.
+        case unintelligible
+    }
+
+    nonisolated static func assertions(from data: Data?) -> Assertions {
         guard let data,
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let first = (root["data"] as? [[String: Any]])?.first,
               let records = first["storeAssertionRecords"] as? [[String: Any]]
-        else { return nil }
+        else { return .unintelligible }
 
         for record in records {
             if let details = record["assertionDetails"] as? [String: Any],
                let identifier = details["assertionDetailsModeIdentifier"] as? String {
-                return identifier
+                return .active(identifier)
             }
         }
+        // The shape is right and carries no assertion: nothing is on.
+        return .inactive
+    }
+
+    nonisolated static func activeModeIdentifier(from data: Data?) -> String? {
+        if case .active(let identifier) = assertions(from: data) { return identifier }
         return nil
     }
 
@@ -290,15 +345,27 @@ public final class StubFocusSource: FocusSource {
 
     public var isReadable: Bool
     private var value: FocusSnapshot?
+    /// Set to stage the case the file can be opened and not understood.
+    public var isUnintelligible: Bool
     private var onChange: (() -> Void)?
 
-    public init(value: FocusSnapshot? = nil, isReadable: Bool = true) {
+    public init(
+        value: FocusSnapshot? = nil,
+        isReadable: Bool = true,
+        isUnintelligible: Bool = false
+    ) {
         self.value = value
         self.isReadable = isReadable
+        self.isUnintelligible = isUnintelligible
     }
 
     public func current() -> FocusSnapshot? {
         isReadable ? value : nil
+    }
+
+    public func reading() -> FocusReading {
+        guard isReadable, !isUnintelligible else { return .unintelligible }
+        return value.map(FocusReading.on) ?? .off
     }
 
     public func set(_ value: FocusSnapshot?) {

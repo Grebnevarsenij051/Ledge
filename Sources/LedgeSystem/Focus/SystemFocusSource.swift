@@ -93,10 +93,13 @@ public final class SystemFocusSource: FocusSource {
     public func current() -> FocusSnapshot? {
         primeIfNeeded()
         return Self.resolve(
-            fileSnapshot: file.isReadable ? file.current() : nil,
-            fileReadable: file.isReadable,
+            file: file.isReadable ? file.reading() : .unintelligible,
             statusFocused: statusAuthorized() && fallbackFocused
         )
+    }
+
+    public func reading() -> FocusReading {
+        current().map(FocusReading.on) ?? .off
     }
 
     /// Which answer wins, as a pure rule so it can be tested without a Mac in
@@ -109,12 +112,22 @@ public final class SystemFocusSource: FocusSource {
     /// Note the database wins even when it says *no* Focus: it is the more
     /// precise source, and disagreement means the cached fallback is stale.
     nonisolated static func resolve(
-        fileSnapshot: FocusSnapshot?,
-        fileReadable: Bool,
+        file: FocusReading,
         statusFocused: Bool
     ) -> FocusSnapshot? {
-        if fileReadable { return fileSnapshot }
-        return statusFocused ? genericFocus : nil
+        switch file {
+        case .on(let snapshot):
+            return snapshot
+        case .off:
+            // Authoritative. The database is the precise source, so its "no"
+            // beats a fallback still holding a Focus that has ended.
+            return nil
+        case .unintelligible:
+            // Unreadable, or readable in a shape this version does not know.
+            // Either way this source knows nothing, and the public API is the
+            // only one left that might.
+            return statusFocused ? genericFocus : nil
+        }
     }
 
     /// Everyone listening, by token. Plural because the Focus answer has two
