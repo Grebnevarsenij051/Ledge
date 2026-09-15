@@ -7,6 +7,8 @@ import SwiftUI
 /// only exists when there is genuinely something hidden.
 public struct MarqueeText: View {
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private let text: String
     private let font: Font
     private let kerning: CGFloat
@@ -51,7 +53,7 @@ public struct MarqueeText: View {
     public var body: some View {
         GeometryReader { proxy in
             Group {
-                if overflows {
+                if overflows, !reduceMotion {
                     scrolling(in: proxy.size.width)
                 } else {
                     label.frame(width: proxy.size.width, alignment: .leading)
@@ -93,9 +95,9 @@ public struct MarqueeText: View {
 
     private func scrolling(in width: CGFloat) -> some View {
         let cycle = textWidth + gap
-        return TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+        return FixedRateClock(isActive: true, interval: .milliseconds(33)) { date in
             let period = (Double(cycle) / speed) + startDelay
-            let sinceStart = max(0, context.date.timeIntervalSinceReferenceDate - epoch)
+            let sinceStart = max(0, date.timeIntervalSinceReferenceDate - epoch)
             let elapsed = max(0, sinceStart.truncatingRemainder(dividingBy: period) - startDelay)
             let offset = -CGFloat(elapsed * speed)
 

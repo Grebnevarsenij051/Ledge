@@ -899,12 +899,13 @@ struct TransportButton: View {
 /// permission prompt for a decorative animation, which every shipping notch app
 /// declines to pay. When paused the bars settle to a low, even line.
 struct NowPlayingEqualizer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.waveformAnimationsEnabled) private var animationsEnabled
     let isAnimating: Bool
     /// 1 leaves the player card exactly as it was; the route menu asks for a
     /// slightly larger one to sit beside its bigger artwork and title.
     var scale: CGFloat = 1
-    /// Live band levels of the actual audio; empty falls back to the
-    /// decorative sine so the bars never sit dead while music plays.
+    /// Synthesized levels, never an audio recording. Empty uses a sine sway.
     var levels: () -> [Double] = { [] }
 
     // Six bars, as iOS draws its now-playing indicator: capsules on a shared
@@ -912,20 +913,19 @@ struct NowPlayingEqualizer: View {
     private static let phases: [Double] = [0.0, 0.55, 0.2, 0.75, 0.35, 0.9]
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !isAnimating)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            let live = isAnimating ? levels() : []
-            HStack(alignment: .center, spacing: 2.5 * scale) {
-                ForEach(Array(Self.phases.enumerated()), id: \.offset) { index, phase in
-                    Capsule()
-                        .fill(.white.opacity(0.9))
-                        .frame(
-                            width: 2.5 * scale,
-                            height: height(at: t, phase: phase, live: live, index: index) * scale
-                        )
-                }
-            }
-            .frame(height: 18 * scale, alignment: .center)
+        FixedRateClock(
+            isActive: isAnimating && animationsEnabled && !reduceMotion,
+            interval: .milliseconds(50)
+        ) { date in
+            let t = date.timeIntervalSinceReferenceDate
+            let live = isAnimating && animationsEnabled && !reduceMotion ? levels() : []
+            WaveformBars(
+                heights: Self.phases.enumerated().map { index, phase in
+                    height(at: t, phase: phase, live: live, index: index) * scale
+                },
+                tint: .white.opacity(0.9), barWidth: 2.5 * scale,
+                spacing: 2.5 * scale, height: 18 * scale
+            )
         }
     }
 
@@ -935,7 +935,7 @@ struct NowPlayingEqualizer: View {
         live: [Double],
         index: Int
     ) -> CGFloat {
-        guard isAnimating else { return 3 }
+        guard isAnimating && animationsEnabled && !reduceMotion else { return 3 }
         if live.count == Self.phases.count {
             let level = live[index]
             guard level.isFinite else { return 3 }

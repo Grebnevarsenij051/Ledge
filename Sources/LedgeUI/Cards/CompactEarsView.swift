@@ -596,6 +596,8 @@ struct NowPlayingThumbnail: View {
 /// trade in the project. Driving it from `isPlaying` gives essentially the same
 /// perceived result.
 struct MiniWaveform: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.waveformAnimationsEnabled) private var animationsEnabled
     let isAnimating: Bool
     let tint: Color
     /// Synthesized band levels from `LevelSimulator` — musical motion seeded
@@ -618,53 +620,41 @@ struct MiniWaveform: View {
     private static let rampDuration: TimeInterval = 0.28
 
     /// When `isAnimating` last changed, so the ramp can be computed from the
-    /// timeline's own clock.
+    /// drawing clock.
     @State private var changedAt: Date = .distantPast
 
-    /// True once the settle ramp has finished and the timeline may stop.
-    ///
-    /// A stored flag flipped by a scheduled task, not a computed check: the
-    /// `paused` argument is only re-evaluated when the *body* re-renders, and
-    /// after the stop-ramp nothing else triggers a render — a computed
-    /// "ramp done" was captured as false mid-ramp and the 24 Hz timeline
-    /// ticked forever behind a resting island.
+    /// The stop-ramp gets a finite budget, then the frame task is cancelled.
     @State private var parked = true
     @State private var parkTask: Task<Void, Never>?
 
+    private var allowsMotion: Bool { animationsEnabled && !reduceMotion }
+
     var body: some View {
         // Kept running through the ramp even once playback has stopped —
-        // pausing the timeline the instant music stops is what made the bars
+        // stopping the clock the instant music stops is what made the bars
         // snap flat. It parks itself as soon as the ramp is done, so an idle
         // companion still costs nothing.
-        TimelineView(
-            .animation(minimumInterval: 1.0 / 24.0, paused: !isAnimating && parked)
-        ) { context in
-            let amount = amplitude(at: context.date)
-            let live = isAnimating ? levels() : []
-            HStack(spacing: 2) {
-                ForEach(Array(Self.phases.enumerated()), id: \.offset) { index, phase in
-                    Capsule()
-                        .fill(tint)
-                        .frame(
-                            width: 2.5,
-                            height: liveHeight(live, index: index, amplitude: amount)
-                                ?? height(
-                                    at: context.date.timeIntervalSinceReferenceDate,
-                                    phase: phase,
-                                    amplitude: amount
-                                )
-                        )
-                }
-            }
-            .frame(height: 14, alignment: .center)
+        FixedRateClock(
+            isActive: allowsMotion && (isAnimating || !parked),
+            interval: .milliseconds(50)
+        ) { date in
+            let amount = allowsMotion ? amplitude(at: date) : 0
+            let live = allowsMotion && isAnimating ? levels() : []
+            WaveformBars(
+                heights: Self.phases.enumerated().map { index, phase in
+                    liveHeight(live, index: index, amplitude: amount)
+                        ?? height(at: date.timeIntervalSinceReferenceDate, phase: phase, amplitude: amount)
+                },
+                tint: tint, barWidth: 2.5, spacing: 2, height: 14
+            )
         }
         .onChange(of: isAnimating) { _, playing in
             changedAt = Date()
             parkTask?.cancel()
+            parked = !allowsMotion
             if playing {
-                parked = false
                 parkTask = nil
-            } else {
+            } else if allowsMotion {
                 // Park just past the ramp's end; flipping the state is itself
                 // the render that lets `paused` finally read true.
                 parkTask = Task { @MainActor in
@@ -674,12 +664,23 @@ struct MiniWaveform: View {
                 }
             }
         }
-        .onDisappear { parkTask?.cancel() }
+        .onChange(of: allowsMotion) { _, allowed in
+            if !allowed {
+                parkTask?.cancel()
+                parkTask = nil
+                parked = true
+            }
+        }
+        .onDisappear {
+            parkTask?.cancel()
+            parkTask = nil
+            parked = true
+        }
     }
 
     /// 0 when stopped, 1 while playing, eased across the ramp in between.
     ///
-    /// Derived from the timeline's clock rather than driven by `withAnimation`:
+    /// Derived from the drawing clock rather than driven by `withAnimation`:
     /// the heights are computed inside the closure, and state read there arrives
     /// at its final value immediately rather than interpolated — so an animation
     /// modifier could not smooth it.

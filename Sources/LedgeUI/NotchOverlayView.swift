@@ -17,12 +17,34 @@ public final class NotchPresentation {
     /// draw the music — not whatever happens to top the queue. Once the
     /// calendar became a standing card it outranked now-playing permanently,
     /// and starting a song showed the calendar in the ears.
-    public var nowPlaying: Activity?
+    public var nowPlaying: Activity? {
+        didSet {
+            guard let nowPlaying, case .nowPlaying(let payload) = nowPlaying.payload,
+                  payload.isPlaying else {
+                waveformSeed = nil
+                return
+            }
+            waveformSeed = LevelSimulator.seed(for: payload.artworkKey ?? "\(payload.title)|\(payload.artist)")
+        }
+    }
 
-    /// Pull-source for the live audio band levels, set once by the shell.
+    @ObservationIgnored private var waveformSeed: UInt64?
+
+    /// The drawing clock reads only a cached primitive, not this model's
+    /// observable media payload, and never hashes track metadata per frame.
+    public func simulatedAudioLevels(at time: TimeInterval) -> [Double] {
+        guard let waveformSeed else { return [] }
+        return LevelSimulator.levels(at: time, seed: waveformSeed)
+    }
+
+    /// Screen sleep and session lock stop decorative animation, even while a
+    /// provider legitimately continues to report playing media.
+    public var screensAreDark = false
+
+    /// Pull-source for synthesized band levels, set once by the shell.
     /// A closure rather than stored values: levels change ~20 times a second,
     /// and storing them here would invalidate every observer of this model on
-    /// each tick. The equalizers poll it from their own frame timers.
+    /// each tick. The equalizers poll it from their own bounded clocks.
     @ObservationIgnored public var audioLevels: () -> [Double] = { [] }
 
     public var count: Int = 0
@@ -581,6 +603,7 @@ public struct NotchOverlayView: View {
         }
         .animation(.easeOut(duration: 0.15), value: isDropTargeted)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .environment(\.waveformAnimationsEnabled, !presentation.screensAreDark)
         .animation(
             Motion.expand(
                 response: preferences.springResponse,
@@ -719,6 +742,8 @@ public struct NotchOverlayView: View {
                 // removed, so the ears keep their footprint and nothing beside
                 // the hardware moves.
                 .opacity(presentation.announcement == nil ? 1 : 0)
+                .environment(\.waveformAnimationsEnabled,
+                    !presentation.screensAreDark && presentation.announcement == nil)
                 .animation(Motion.medium, value: presentation.announcement != nil)
                 // Held to the compact band, pinned to the top of it.
                 //

@@ -259,6 +259,7 @@ public final class LedgeCoordinator {
 
     private func setScreensDark(_ reason: ScreenDormancy.Reason, _ active: Bool) {
         guard dormancy.set(reason, active) else { return }
+        presentation.screensAreDark = dormancy.isDark
         if dormancy.isDark {
             hoverTracker?.stop()
             hud.setDormant(true)
@@ -1690,15 +1691,7 @@ public final class LedgeCoordinator {
     /// the playing track, no audio capture of any kind. Empty when nothing is
     /// playing — the views then rest flat.
     private func simulatedLevels() -> [Double] {
-        guard let activity = presentation.nowPlaying,
-              case .nowPlaying(let payload) = activity.payload,
-              payload.isPlaying
-        else { return [] }
-        let key = payload.artworkKey ?? "\(payload.title)|\(payload.artist)"
-        return LevelSimulator.levels(
-            at: Date().timeIntervalSinceReferenceDate,
-            seed: LevelSimulator.seed(for: key)
-        )
+        presentation.simulatedAudioLevels(at: Date().timeIntervalSinceReferenceDate)
     }
 
     /// The last freeze state pushed to the queue — every phase change used to
@@ -1888,6 +1881,7 @@ public final class LedgeCoordinator {
         focusBaseline?.stopWatching()
         focusBaseline = nil
         dormancy.clear()
+        presentation.screensAreDark = false
         satelliteDismiss?.cancel()
         satelliteDismiss = nil
         parkedSatellite = nil
