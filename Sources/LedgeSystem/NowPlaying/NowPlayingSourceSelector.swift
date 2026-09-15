@@ -43,11 +43,14 @@ public enum NowPlayingSourceSelector {
 
         let scripting = ScriptingNowPlayingSource(mayQueryPlayers: mayQueryPlayers)
 
+        // Noted, never acted on. There is no in-process reader behind this
+        // probe: it used to return the *scripting* source when the probe
+        // succeeded, which would have quietly dropped system-wide coverage —
+        // browsers included — the day a future macOS let the read through.
+        // Discovery continues below, and whichever source is chosen is the one
+        // the reason string names.
         if await probe() {
-            // Not reachable on macOS 26.4 today. Left in so the day it becomes
-            // reachable is a one-line log change rather than an investigation.
-            log.notice("now playing: MediaRemote reads are available in-process")
-            return Choice(source: scripting, reason: "MediaRemote readable in-process")
+            log.notice("now playing: MediaRemote reads are available in-process, unused")
         }
 
         if let found = await adapterProbe() {
