@@ -30,8 +30,7 @@ public final class BrightnessController {
     public var onChange: (HUDReadout) -> Void = { _ in }
 
     private var timer: Timer?
-    private var lastLevel: Double?
-    private var quickPollsRemaining = 0
+    private var polling = BrightnessPollingState()
 
     /// The resting beat, watching for brightness moved by something other than
     /// this app — an ambient-light adjustment, the Touch Bar, another utility.
@@ -104,14 +103,14 @@ public final class BrightnessController {
             Self.log.notice("DisplayServicesGetBrightness unavailable — brightness HUD disabled")
             return
         }
-        lastLevel = level()
+        polling.reset(level: level())
         schedule(interval: idleInterval)
     }
 
     public func stopWatching() {
         timer?.invalidate()
         timer = nil
-        quickPollsRemaining = 0
+        polling.stop()
     }
 
     private func schedule(interval: TimeInterval) {
@@ -137,45 +136,79 @@ public final class BrightnessController {
     private let manualStep: Double = 0.045
 
     private func tick() {
-        guard let current = level() else { return }
-
-        guard let last = lastLevel else {
-            lastLevel = current
-            return
+        let change = polling.observe(level(), manualStep: manualStep)
+        switch change.cadence {
+        case .active: schedule(interval: activeInterval)
+        case .idle: schedule(interval: idleInterval)
+        case nil: break
         }
-
-        let delta = abs(current - last)
-
-        // Floating-point noise: nothing changed.
-        if delta < 0.001 {
-            if quickPollsRemaining > 0 {
-                quickPollsRemaining -= 1
-                if quickPollsRemaining == 0 { schedule(interval: idleInterval) }
-            }
-            return
+        if let level = change.levelToPublish {
+            onChange(HUDReadout(kind: .brightness, level: level))
         }
-
-        lastLevel = current
-
-        // Only a manual-sized step shows the HUD. An ambient ramp — even one
-        // that happens to land inside the fast-poll window a keypress opened —
-        // must not surface as if the user pressed a key.
-        guard delta >= manualStep else {
-            // Let the fast-poll window decay on its own; do not re-arm it for an
-            // ambient tick, or a slow ramp would hold the poll at 20 Hz.
-            if quickPollsRemaining > 0 {
-                quickPollsRemaining -= 1
-                if quickPollsRemaining == 0 { schedule(interval: idleInterval) }
-            }
-            return
-        }
-
-        // A manual step. Speed up briefly so the rest of a held press tracks
-        // smoothly rather than in half-second jumps.
-        if quickPollsRemaining == 0 { schedule(interval: activeInterval) }
-        quickPollsRemaining = 40
-
-        onChange(HUDReadout(kind: .brightness, level: current))
     }
 }
 
+/// The hardware-independent state behind brightness polling.
+///
+/// A fast-poll window is a finite budget of timer firings, not successful
+/// DisplayServices reads. The private API can stop answering after the window
+/// starts; failed reads must still spend the budget or the main run loop stays
+/// at 20 Hz forever.
+struct BrightnessPollingState {
+    enum Cadence: Equatable {
+        case active
+        case idle
+    }
+
+    struct Change: Equatable {
+        var cadence: Cadence?
+        var levelToPublish: Double?
+    }
+
+    static let quickPollCount = 40
+
+    private var lastLevel: Double?
+    private(set) var quickPollsRemaining = 0
+
+    mutating func reset(level: Double?) {
+        lastLevel = level
+        quickPollsRemaining = 0
+    }
+
+    mutating func stop() {
+        quickPollsRemaining = 0
+    }
+
+    mutating func observe(_ current: Double?, manualStep: Double) -> Change {
+        guard let current else { return spendQuickPoll() }
+
+        guard let last = lastLevel else {
+            lastLevel = current
+            return spendQuickPoll()
+        }
+
+        let delta = abs(current - last)
+        guard delta >= 0.001 else { return spendQuickPoll() }
+
+        lastLevel = current
+
+        // Ambient changes update the baseline but do not surface as key presses
+        // and do not extend a fast window already in progress.
+        guard delta >= manualStep else { return spendQuickPoll() }
+
+        let cadence: Cadence? = quickPollsRemaining == 0 ? .active : nil
+        quickPollsRemaining = Self.quickPollCount
+        return Change(cadence: cadence, levelToPublish: current)
+    }
+
+    private mutating func spendQuickPoll() -> Change {
+        guard quickPollsRemaining > 0 else {
+            return Change(cadence: nil, levelToPublish: nil)
+        }
+        quickPollsRemaining -= 1
+        return Change(
+            cadence: quickPollsRemaining == 0 ? .idle : nil,
+            levelToPublish: nil
+        )
+    }
+}
